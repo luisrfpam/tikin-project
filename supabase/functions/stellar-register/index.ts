@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
     let errorMsg: string | null = null;
 
     try {
+      // O hash oficial da transacao e gerado pela rede ao submeter o tx; em seguida ele e salvo em blockchain_transactions como stellar_tx_hash.
       const result = await server.submitTransaction(tx);
       hash = (result as any).hash;
       ledger = (result as any).ledger ?? null;

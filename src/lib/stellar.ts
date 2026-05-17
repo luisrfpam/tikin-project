@@ -31,6 +31,7 @@ export async function registerOnStellar(args: StellarRegisterArgs): Promise<Stel
 }
 
 export function stellarExplorerUrl(hash: string) {
+  // Monta o link de consulta da transacao no Stellar Expert usando o explorer da rede Testnet.
   return `https://stellar.expert/explorer/testnet/tx/${hash}`;
 }
 

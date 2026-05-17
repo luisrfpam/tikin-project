@@ -1,0 +1,1 @@
+DELETE FROM public.blockchain_transactions WHERE status='failed' AND internal_id IN ('a5ee4b42-109d-45e4-950b-c3d11245f531','7bddae36-1954-49b0-95d2-dc2523bc13a3','5a411c1b-388f-4a84-80c6-f52ea491bdc0');

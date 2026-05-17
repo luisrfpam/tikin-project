@@ -16,6 +16,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Usa o endpoint Horizon da Stellar Testnet para submeter transacoes de registro sem tocar a rede principal.
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 const PUBLIC_KEY = 'GA77ZOQA43YJIS6NF26UIRB2MH6N4ZMF277XCQSVDNT5YPZQPWPAV27A';
 

@@ -12,6 +12,7 @@ import { ptBR } from 'date-fns/locale';
 import { useCategories, categoryLabel } from '@/lib/categories';
 import { registerOnStellar, stellarExplorerUrl } from '@/lib/stellar';
 import { StellarHashLink } from '@/components/StellarHashLink';
+import { EtherfusePixModal } from '@/components/EtherfusePixModal';
 
 interface Fund {
   id: string;
@@ -23,6 +24,7 @@ interface Fund {
   category_allocated: Record<string, number> | null;
   auto_rollover: boolean;
   last_stellar_tx_hash?: string | null;
+  status?: 'active' | 'pending_funding' | 'failed';
 }
 
 
@@ -37,17 +39,18 @@ export default function EmissorFundos() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Fund | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [pixModal, setPixModal] = useState<{ fundId: string; amount: number } | null>(null);
 
   useEffect(() => { if (user) load(); }, [user]);
 
-  async function load() {
-    setLoading(true);
+  async function load(showSpinner = true) {
+    if (showSpinner) setLoading(true);
     const { data: iss } = await supabase.from('issuers').select('id').eq('user_id', user!.id).maybeSingle();
-    if (!iss) { setLoading(false); return; }
+    if (!iss) { if (showSpinner) setLoading(false); return; }
     setIssuerId(iss.id);
     const { data } = await supabase.from('issuer_funds').select('*').eq('issuer_id', iss.id).order('month', { ascending: false });
     setFunds((data as any[] as Fund[]) || []);
-    setLoading(false);
+    if (showSpinner) setLoading(false);
   }
 
   const currentFund = useMemo(() => funds.find(f => f.month.startsWith(currentMonthStr())) || null, [funds]);
@@ -154,7 +157,15 @@ export default function EmissorFundos() {
                 const pct = Number(f.monthly_budget) > 0 ? Math.min(100, (Number(f.allocated) / Number(f.monthly_budget)) * 100) : 0;
                 return (
                   <tr key={f.id} className="border-t border-white/5">
-                    <td className="px-6 py-4 text-sm capitalize font-semibold">{format(parseISO(f.month), "MMMM 'de' yyyy", { locale: ptBR })}</td>
+                    <td className="px-6 py-4 text-sm capitalize font-semibold">
+                      {format(parseISO(f.month), "MMMM 'de' yyyy", { locale: ptBR })}
+                      {f.status === 'pending_funding' && (
+                        <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] uppercase font-heading font-black bg-yellow-500/15 text-yellow-300 border border-yellow-500/30">Aguardando PIX</span>
+                      )}
+                      {f.status === 'failed' && (
+                        <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] uppercase font-heading font-black bg-red-500/15 text-red-300 border border-red-500/30">Falhou</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right font-heading font-black text-sm">R$ {fmtBRL(Number(f.monthly_budget))}</td>
                     <td className="px-6 py-4 text-right text-sm">R$ {fmtBRL(Number(f.allocated))}</td>
                     <td className={`px-6 py-4 text-right font-bold text-sm ${disp <= 0 ? 'text-red-400' : 'text-green-400'}`}>R$ {fmtBRL(disp)}</td>
@@ -169,6 +180,9 @@ export default function EmissorFundos() {
                     <td className="px-6 py-4"><StellarHashLink hash={f.last_stellar_tx_hash} /></td>
                     <td className="px-6 py-4">
                       <div className="flex justify-center gap-1">
+                        {f.status === 'pending_funding' && (
+                          <button title="Retomar PIX" onClick={() => setPixModal({ fundId: f.id, amount: Number(f.monthly_budget) })} className="p-2 rounded-md bg-yellow-500/15 hover:bg-yellow-500/25 text-yellow-300"><Wallet size={12} /></button>
+                        )}
                         <button title="Editar" onClick={() => { setEditing(f); setShowForm(true); }} className="p-2 rounded-md bg-white/5 hover:bg-white/10"><Pencil size={12} /></button>
                         <button title="Duplicar para próximo mês" onClick={() => { setEditing({ ...f, id: '', month: format(addMonths(parseISO(f.month), 1), 'yyyy-MM-01'), allocated: 0, category_allocated: {} }); setShowForm(true); }} className="p-2 rounded-md bg-white/5 hover:bg-white/10"><Copy size={12} /></button>
                       </div>
@@ -187,7 +201,22 @@ export default function EmissorFundos() {
           initial={editing}
           previousFund={funds[0] || null}
           onClose={() => { setShowForm(false); setEditing(null); }}
-          onSaved={() => { setShowForm(false); setEditing(null); load(); }}
+          onSaved={(fundId, isNew, amount) => {
+            setShowForm(false); setEditing(null);
+            if (isNew && fundId) {
+              setPixModal({ fundId, amount });
+            }
+            load();
+          }}
+        />
+      )}
+
+      {pixModal && (
+        <EtherfusePixModal
+          amountBRL={pixModal.amount}
+          issuerFundsId={pixModal.fundId}
+          onClose={() => { setPixModal(null); load(); }}
+          onPaid={() => { load(false); }}
         />
       )}
     </EmissorLayout>
@@ -204,7 +233,7 @@ function KCard({ icon, label, value, hint, accent }: { icon: React.ReactNode; la
   );
 }
 
-function FundFormModal({ issuerId, initial, previousFund, onClose, onSaved }: { issuerId: string; initial: Fund | null; previousFund: Fund | null; onClose: () => void; onSaved: () => void }) {
+function FundFormModal({ issuerId, initial, previousFund, onClose, onSaved }: { issuerId: string; initial: Fund | null; previousFund: Fund | null; onClose: () => void; onSaved: (fundId: string, isNew: boolean, amount: number) => void }) {
   const cats = useCategories();
   const [month, setMonth] = useState(initial ? initial.month.slice(0, 7) : currentMonthStr());
   const [budget, setBudget] = useState(initial ? fmtBRL(Number(initial.monthly_budget)) : '');
@@ -267,7 +296,7 @@ function FundFormModal({ issuerId, initial, previousFund, onClose, onSaved }: { 
       toast.success(initial?.id ? 'Orçamento atualizado' : 'Orçamento criado');
       if (stellar.error) toast.warning('Falha ao registrar na Stellar: ' + stellar.error);
     }
-    onSaved();
+    onSaved((saved as any).id, !initial?.id, budgetNum);
   }
 
   return (

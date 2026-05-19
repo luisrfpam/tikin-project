@@ -29,7 +29,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT email FROM public.profiles
-  WHERE cpf = _identifier OR cnpj = _identifier
+  WHERE regexp_replace(coalesce(cpf,''),'\D','','g') = regexp_replace(coalesce(_identifier,''),'\D','','g')
+    OR regexp_replace(coalesce(cnpj,''),'\D','','g') = regexp_replace(coalesce(_identifier,''),'\D','','g')
   LIMIT 1;
 $$;
 

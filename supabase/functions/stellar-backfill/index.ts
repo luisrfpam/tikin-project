@@ -109,7 +109,6 @@ Deno.serve(async (req) => {
       try {
         const account = await server.loadAccount(keypair.publicKey());
         const fee = await server.fetchBaseFee();
-        // Assina e valida a transacao especificamente na Stellar Testnet durante o backfill dos registros antigos.
         const tx = new TransactionBuilder(account, { fee: String(fee), networkPassphrase: Networks.TESTNET })
           .addOperation(Operation.payment({ destination: PUBLIC_KEY, asset: Asset.native(), amount: '0.0000001' }))
           .addMemo(Memo.hash(memoHex))

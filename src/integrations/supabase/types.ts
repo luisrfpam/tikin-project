@@ -221,6 +221,36 @@ export type Database = {
         }
         Relationships: []
       }
+      etherfuse_customers: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          issuer_id: string
+          kyc_status: string
+          kyc_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: string
+          issuer_id: string
+          kyc_status?: string
+          kyc_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          issuer_id?: string
+          kyc_status?: string
+          kyc_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           beneficiary_id: string
@@ -304,6 +334,8 @@ export type Database = {
           month: string
           monthly_budget: number
           notes: string | null
+          onramp_order_id: string | null
+          status: string
           updated_at: string
         }
         Insert: {
@@ -318,6 +350,8 @@ export type Database = {
           month: string
           monthly_budget?: number
           notes?: string | null
+          onramp_order_id?: string | null
+          status?: string
           updated_at?: string
         }
         Update: {
@@ -332,6 +366,8 @@ export type Database = {
           month?: string
           monthly_budget?: number
           notes?: string | null
+          onramp_order_id?: string | null
+          status?: string
           updated_at?: string
         }
         Relationships: [
@@ -343,6 +379,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      issuer_stellar_wallets: {
+        Row: {
+          created_at: string
+          id: string
+          issuer_id: string
+          public_key: string
+          secret_encrypted: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          issuer_id: string
+          public_key: string
+          secret_encrypted: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          issuer_id?: string
+          public_key?: string
+          secret_encrypted?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       issuers: {
         Row: {
@@ -386,6 +449,90 @@ export type Database = {
         }
         Relationships: []
       }
+      merchant_pix_keys: {
+        Row: {
+          created_at: string
+          establishment_id: string
+          id: string
+          is_default: boolean
+          key_type: string
+          key_value: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          establishment_id: string
+          id?: string
+          is_default?: boolean
+          key_type: string
+          key_value: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          establishment_id?: string
+          id?: string
+          is_default?: boolean
+          key_type?: string
+          key_value?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      offramp_orders: {
+        Row: {
+          amount_brl: number
+          created_at: string
+          error: string | null
+          establishment_id: string
+          etherfuse_order_id: string | null
+          id: string
+          issuer_id: string
+          pix_key_type: string | null
+          pix_key_value: string | null
+          pix_paid_at: string | null
+          status: string
+          stellar_burn_tx_hash: string | null
+          transaction_id: string
+          updated_at: string
+          voucher_id: string
+        }
+        Insert: {
+          amount_brl: number
+          created_at?: string
+          error?: string | null
+          establishment_id: string
+          etherfuse_order_id?: string | null
+          id?: string
+          issuer_id: string
+          pix_key_type?: string | null
+          pix_key_value?: string | null
+          pix_paid_at?: string | null
+          status?: string
+          stellar_burn_tx_hash?: string | null
+          transaction_id: string
+          updated_at?: string
+          voucher_id: string
+        }
+        Update: {
+          amount_brl?: number
+          created_at?: string
+          error?: string | null
+          establishment_id?: string
+          etherfuse_order_id?: string | null
+          id?: string
+          issuer_id?: string
+          pix_key_type?: string | null
+          pix_key_value?: string | null
+          pix_paid_at?: string | null
+          status?: string
+          stellar_burn_tx_hash?: string | null
+          transaction_id?: string
+          updated_at?: string
+          voucher_id?: string
+        }
+        Relationships: []
+      }
       onboarding_requests: {
         Row: {
           created_at: string
@@ -407,6 +554,54 @@ export type Database = {
           id?: string
           name?: string
           status?: string
+        }
+        Relationships: []
+      }
+      onramp_orders: {
+        Row: {
+          amount_brl: number
+          created_at: string
+          error: string | null
+          etherfuse_order_id: string | null
+          expires_at: string | null
+          id: string
+          issuer_funds_id: string | null
+          issuer_id: string
+          pix_copy_paste: string | null
+          pix_qr: string | null
+          status: string
+          stellar_tx_hash: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_brl: number
+          created_at?: string
+          error?: string | null
+          etherfuse_order_id?: string | null
+          expires_at?: string | null
+          id?: string
+          issuer_funds_id?: string | null
+          issuer_id: string
+          pix_copy_paste?: string | null
+          pix_qr?: string | null
+          status?: string
+          stellar_tx_hash?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_brl?: number
+          created_at?: string
+          error?: string | null
+          etherfuse_order_id?: string | null
+          expires_at?: string | null
+          id?: string
+          issuer_funds_id?: string | null
+          issuer_id?: string
+          pix_copy_paste?: string | null
+          pix_qr?: string | null
+          status?: string
+          stellar_tx_hash?: string | null
+          updated_at?: string
         }
         Relationships: []
       }

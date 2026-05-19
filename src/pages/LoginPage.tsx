@@ -1,8 +1,42 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { maskCPF, maskCNPJ, isValidCPF, isValidCNPJ, isValidEmail, onlyDigits, looksLikeDocument } from '@/lib/validators';
+
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 3 * 60 * 1000;
+const LS_KEY = 'tikin_login_attempts';
+
+type AttemptRecord = { count: number; lockedUntil: number | null };
+
+function readAttempts(key: string): AttemptRecord {
+  try {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    return all[key] || { count: 0, lockedUntil: null };
+  } catch { return { count: 0, lockedUntil: null }; }
+}
+function writeAttempts(key: string, rec: AttemptRecord) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    all[key] = rec;
+    localStorage.setItem(LS_KEY, JSON.stringify(all));
+  } catch {}
+}
+function clearAttempts(key: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    delete all[key];
+    localStorage.setItem(LS_KEY, JSON.stringify(all));
+  } catch {}
+}
+function fmtMs(ms: number) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
 
 type Role = 'beneficiario' | 'lojista' | 'emissor';
 
@@ -49,8 +83,39 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
   const navigate = useNavigate();
   const cfg = ROLE_CONFIG[role];
+
+  const attemptKey = `${role}:${identifier.trim().toLowerCase()}`;
+
+  // Re-check lockout when identifier/role changes
+  useEffect(() => {
+    const rec = readAttempts(attemptKey);
+    if (rec.lockedUntil && rec.lockedUntil > Date.now()) {
+      setLockedUntil(rec.lockedUntil);
+    } else {
+      setLockedUntil(null);
+      if (rec.lockedUntil && rec.lockedUntil <= Date.now()) clearAttempts(attemptKey);
+    }
+  }, [attemptKey]);
+
+  // Tick countdown
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const t = setInterval(() => {
+      const n = Date.now();
+      setNow(n);
+      if (n >= lockedUntil) {
+        setLockedUntil(null);
+        clearAttempts(attemptKey);
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [lockedUntil, attemptKey]);
+
 
   const isDoc = looksLikeDocument(identifier) && !identifier.includes('@');
 
@@ -68,10 +133,19 @@ export default function LoginPage() {
     if (!value) return toast.error('Informe seu identificador');
     if (!password) return toast.error('Informe sua senha');
 
+    // Block if locked
+    const rec = readAttempts(attemptKey);
+    if (rec.lockedUntil && rec.lockedUntil > Date.now()) {
+      setLockedUntil(rec.lockedUntil);
+      toast.error(`Muitas tentativas. Tente novamente em ${fmtMs(rec.lockedUntil - Date.now())}.`);
+      return;
+    }
+
     let email = value;
     if (!value.includes('@')) {
-      if (role === 'beneficiario' && !isValidCPF(value)) return toast.error('CPF inválido');
-      if (role !== 'beneficiario' && !isValidCNPJ(value)) return toast.error('CNPJ inválido');
+      const digits = onlyDigits(value);
+      if (role === 'beneficiario' && digits.length !== 11) return toast.error('CPF deve ter 11 dígitos');
+      if (role !== 'beneficiario' && digits.length !== 14) return toast.error('CNPJ deve ter 14 dígitos');
     } else if (!isValidEmail(value)) {
       return toast.error('E-mail inválido');
     }
@@ -81,7 +155,7 @@ export default function LoginPage() {
       const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: onlyDigits(value) });
       if (error || !data) {
         setLoading(false);
-        toast.error('Documento não encontrado. Verifique seus dados.');
+        registerFailure();
         return;
       }
       email = data;
@@ -90,11 +164,28 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      toast.error('Credenciais inválidas');
+      registerFailure();
     } else {
+      clearAttempts(attemptKey);
       navigate('/');
     }
   };
+
+  const registerFailure = () => {
+    const rec = readAttempts(attemptKey);
+    const count = rec.count + 1;
+    const remaining = MAX_ATTEMPTS - count;
+    if (count >= MAX_ATTEMPTS) {
+      const until = Date.now() + LOCKOUT_MS;
+      writeAttempts(attemptKey, { count, lockedUntil: until });
+      setLockedUntil(until);
+      toast.error('Você excedeu o limite de tentativas. Aguarde 3 minutos antes de tentar novamente.');
+    } else {
+      writeAttempts(attemptKey, { count, lockedUntil: null });
+      toast.error(`Credenciais inválidas. ${remaining} ${remaining === 1 ? 'tentativa restante' : 'tentativas restantes'}.`);
+    }
+  };
+
 
   const tabBtn = (r: Role) => {
     const active = role === r;
@@ -165,6 +256,15 @@ export default function LoginPage() {
               />
             </div>
 
+
+            {lockedUntil && lockedUntil > now && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <strong className="block font-heading">Acesso temporariamente bloqueado</strong>
+                Por segurança, bloqueamos novas tentativas. Tente novamente em{' '}
+                <span className="font-mono font-bold">{fmtMs(lockedUntil - now)}</span>.
+              </div>
+            )}
+
             <div className="flex justify-between items-center text-sm">
               <label className="flex items-center gap-2 text-tikin-navy/60 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 accent-tikin-navy" /> Manter conectado
@@ -174,11 +274,14 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
-              className={`w-full py-4 rounded-xl font-heading font-extrabold tracking-wider text-sm transition disabled:opacity-60 ${cfg.btnClass}`}
+              disabled={loading || (!!lockedUntil && lockedUntil > now)}
+              className={`w-full py-4 rounded-xl font-heading font-extrabold tracking-wider text-sm transition disabled:opacity-60 disabled:cursor-not-allowed ${cfg.btnClass}`}
             >
-              {loading ? 'ENTRANDO...' : 'ENTRAR NO APLICATIVO'}
+              {lockedUntil && lockedUntil > now
+                ? `AGUARDE ${fmtMs(lockedUntil - now)}`
+                : loading ? 'ENTRANDO...' : 'ENTRAR NO APLICATIVO'}
             </button>
+
           </form>
 
           <p className="text-center mt-6 text-sm text-tikin-navy/60">

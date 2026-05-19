@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { categoryLabel } from '@/lib/categories';
 import { formatCnpj } from '@/lib/utils';
+import { MerchantPixKeys } from '@/components/MerchantPixKeys';
+
 
 interface Establishment {
   id: string;
@@ -34,7 +36,7 @@ interface Establishment {
 export default function LojistaPerfil() {
   const { profile, user, signOut } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'dados' | 'estabelecimento' | 'senha'>('dados');
+  const [tab, setTab] = useState<'dados' | 'estabelecimento' | 'pix' | 'senha'>('dados');
   const [est, setEst] = useState<Establishment | null>(null);
   const [pwd1, setPwd1] = useState('');
   const [pwd2, setPwd2] = useState('');
@@ -85,14 +87,15 @@ export default function LojistaPerfil() {
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl p-1 flex shadow-card text-xs font-bold">
-          {(['dados', 'estabelecimento', 'senha'] as const).map(t => (
+        <div className="bg-white rounded-2xl p-1 flex shadow-card text-[11px] font-bold">
+          {(['dados', 'estabelecimento', 'pix', 'senha'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2 rounded-xl capitalize ${tab === t ? 'bg-tikin-navy text-white' : 'text-tikin-navy/50'}`}>
-              {t}
+              {t === 'pix' ? 'PIX' : t}
             </button>
           ))}
         </div>
+
 
         {tab === 'dados' && (
           <div className="bg-white rounded-2xl p-6 space-y-4 shadow-card">
@@ -125,6 +128,14 @@ export default function LojistaPerfil() {
             </div>
           </div>
         )}
+
+        {tab === 'pix' && est && (
+          <div className="bg-white rounded-2xl p-6 shadow-card">
+            <MerchantPixKeys establishmentId={est.id} />
+          </div>
+        )}
+
+
 
         {tab === 'senha' && (
           <form onSubmit={changePassword} className="bg-white rounded-2xl p-6 space-y-4 shadow-card">

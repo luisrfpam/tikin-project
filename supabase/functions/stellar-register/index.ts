@@ -16,7 +16,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Usa o endpoint Horizon da Stellar Testnet para submeter transacoes de registro sem tocar a rede principal.
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 const PUBLIC_KEY = 'GA77ZOQA43YJIS6NF26UIRB2MH6N4ZMF277XCQSVDNT5YPZQPWPAV27A';
 
@@ -40,6 +39,17 @@ async function sha256Hex(input: string): Promise<Uint8Array> {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return new Uint8Array(hash);
+}
+
+async function decryptSecret(b64: string, key: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyBuf = await crypto.subtle.digest('SHA-256', enc.encode(key));
+  const cryptoKey = await crypto.subtle.importKey('raw', keyBuf, { name: 'AES-GCM' }, false, ['decrypt']);
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const iv = bytes.slice(0, 12);
+  const ct = bytes.slice(12);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ct);
+  return new TextDecoder().decode(pt);
 }
 
 Deno.serve(async (req) => {
@@ -91,16 +101,45 @@ Deno.serve(async (req) => {
       );
     }
 
-    const secret = Deno.env.get('STELLAR_SECRET_KEY');
-    if (!secret) throw new Error('STELLAR_SECRET_KEY not configured');
+    const masterSecret = Deno.env.get('STELLAR_SECRET_KEY');
+    if (!masterSecret) throw new Error('STELLAR_SECRET_KEY not configured');
 
     const memoPayload = `${body.internal_id}|${body.amount ?? 0}`;
     const memoBytes = await sha256Hex(memoPayload);
     const memoHex = Array.from(memoBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-    const keypair = Keypair.fromSecret(secret);
+    // Resolve signing keypair: prefer the ISSUER's own Stellar wallet when issuer_id is provided.
+    // The master keypair is only a centralizer fallback for system events without a known issuer.
+    let signerKp = Keypair.fromSecret(masterSecret);
+    let usedIssuerWallet = false;
+    if (body.issuer_id) {
+      const { data: wallet } = await supabase
+        .from('issuer_stellar_wallets')
+        .select('public_key, secret_encrypted')
+        .eq('issuer_id', body.issuer_id)
+        .maybeSingle();
+      if (wallet?.secret_encrypted) {
+        try {
+          const issuerSecret = await decryptSecret(wallet.secret_encrypted, masterSecret);
+          signerKp = Keypair.fromSecret(issuerSecret);
+          usedIssuerWallet = true;
+        } catch (e) {
+          console.error('failed to decrypt issuer wallet, falling back to master', e);
+        }
+      }
+    }
+
     const server = new Horizon.Server(HORIZON_URL);
-    const account = await server.loadAccount(keypair.publicKey());
+
+    // Ensure account exists on testnet (fund via friendbot for fresh issuer wallets)
+    let account;
+    try {
+      account = await server.loadAccount(signerKp.publicKey());
+    } catch {
+      await fetch(`https://friendbot.stellar.org?addr=${encodeURIComponent(signerKp.publicKey())}`);
+      await new Promise(r => setTimeout(r, 1500));
+      account = await server.loadAccount(signerKp.publicKey());
+    }
     const fee = await server.fetchBaseFee();
 
     const tx = new TransactionBuilder(account, {
@@ -109,7 +148,8 @@ Deno.serve(async (req) => {
     })
       .addOperation(
         Operation.payment({
-          destination: PUBLIC_KEY,
+          // self-payment as proof anchor; signed by the issuer's own keypair when available
+          destination: signerKp.publicKey(),
           asset: Asset.native(),
           amount: '0.0000001',
         })
@@ -118,7 +158,8 @@ Deno.serve(async (req) => {
       .setTimeout(60)
       .build();
 
-    tx.sign(keypair);
+    tx.sign(signerKp);
+    console.log('signing with', usedIssuerWallet ? 'ISSUER wallet' : 'MASTER wallet', signerKp.publicKey());
 
     let hash: string | null = null;
     let ledger: number | null = null;
@@ -126,7 +167,6 @@ Deno.serve(async (req) => {
     let errorMsg: string | null = null;
 
     try {
-      // O hash oficial da transacao e gerado pela rede ao submeter o tx; em seguida ele e salvo em blockchain_transactions como stellar_tx_hash.
       const result = await server.submitTransaction(tx);
       hash = (result as any).hash;
       ledger = (result as any).ledger ?? null;

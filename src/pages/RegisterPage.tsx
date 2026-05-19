@@ -136,7 +136,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
     if (data.user) {
       await supabase.from('profiles').update({ name: form.responsible_name, cnpj: form.cnpj }).eq('id', data.user.id);
       await supabase.from('user_roles').insert([{ user_id: data.user.id, role: 'emissor' }]);
-      await supabase.from('issuers').insert([{
+      const { data: newIssuer } = await supabase.from('issuers').insert([{
         user_id: data.user.id,
         company_name: form.razao_social,
         razao_social: form.razao_social,
@@ -145,7 +145,11 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
         responsible_role: form.responsible_role,
         corporate_email: form.corporate_email,
         fund_balance: 100000,
-      }]);
+      }]).select('id').maybeSingle();
+      // Provisiona carteira Stellar própria do emissor (não compartilha master)
+      if (newIssuer?.id) {
+        try { await supabase.functions.invoke('stellar-ensure-wallet', { body: { issuer_id: newIssuer.id } }); } catch (e) { console.error('ensure wallet', e); }
+      }
     }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
     setLoading(false);

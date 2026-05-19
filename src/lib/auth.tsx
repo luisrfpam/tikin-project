@@ -44,28 +44,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          setTimeout(() => fetchRolesAndProfile(session.user.id), 0);
-        } else {
+    let currentUserId: string | null = null;
+
+    const applySession = (session: Session | null, fetchProfile: boolean) => {
+      setSession(session);
+      const nextUser = session?.user ?? null;
+      const nextId = nextUser?.id ?? null;
+      // Only replace the user reference if the identity actually changed.
+      // Supabase fires onAuthStateChange on TOKEN_REFRESHED / window focus,
+      // which would otherwise re-trigger every useEffect([user]) downstream.
+      if (nextId !== currentUserId) {
+        currentUserId = nextId;
+        setUser(nextUser);
+        if (nextUser && fetchProfile) {
+          setTimeout(() => fetchRolesAndProfile(nextUser.id), 0);
+        } else if (!nextUser) {
           setRoles([]);
           setActiveRole(null);
           setProfile(null);
         }
-        setLoading(false);
       }
+      setLoading(false);
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => applySession(session, true)
     );
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchRolesAndProfile(session.user.id);
-      }
-      setLoading(false);
+      applySession(session, true);
     });
 
     return () => subscription.unsubscribe();

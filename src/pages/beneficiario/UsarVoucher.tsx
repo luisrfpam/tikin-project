@@ -194,7 +194,13 @@ export default function UsarVoucher() {
         if (r.success && r.hash) {
           toast.success(`Pagamento registrado na Stellar (${r.hash.slice(0, 8)}…)`);
         }
+        // Fire-and-forget off-ramp: queima TESOURO da carteira do emissor e
+        // dispara PIX em BRL para a chave default do lojista.
+        supabase.functions.invoke('etherfuse-create-offramp', {
+          body: { transaction_id: txId },
+        }).catch(err => console.error('offramp invoke', err));
       }
+
       setStep('success');
     } catch (e: any) {
       toast.error(e.message || 'Erro ao processar pagamento');

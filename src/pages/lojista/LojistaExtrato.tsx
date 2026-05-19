@@ -8,6 +8,8 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useCategories, categoryLabel } from '@/lib/categories';
 import { enrichBeneficiaryNames } from '@/lib/enrichTx';
+import { StellarHashLink } from '@/components/StellarHashLink';
+
 
 interface Tx {
   id: string;
@@ -35,6 +37,7 @@ export default function LojistaExtrato() {
   const navigate = useNavigate();
   const cats = useCategories();
   const [transactions, setTransactions] = useState<Tx[]>([]);
+  const [offramps, setOfframps] = useState<Record<string, { status: string; stellar_burn_tx_hash: string | null; error: string | null }>>({});
   const [period, setPeriod] = useState(30);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -50,8 +53,18 @@ export default function LojistaExtrato() {
         .eq('establishment_id', est.id).order('created_at', { ascending: false });
       const enriched = await enrichBeneficiaryNames((data as Tx[]) ?? []);
       setTransactions(enriched);
+      const txIds = enriched.map(t => t.id);
+      if (txIds.length) {
+        const { data: ofs } = await supabase.from('offramp_orders')
+          .select('transaction_id, status, stellar_burn_tx_hash, error')
+          .in('transaction_id', txIds);
+        const map: Record<string, any> = {};
+        (ofs ?? []).forEach((o: any) => { map[o.transaction_id] = o; });
+        setOfframps(map);
+      }
     });
   }, [user]);
+
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -164,6 +177,17 @@ export default function LojistaExtrato() {
             <p className="p-8 text-center text-sm text-tikin-navy/50">Nenhuma transação no período.</p>
           ) : filtered.map(tx => {
             const isCredit = tx.tx_type === 'credit';
+            const off = offramps[tx.id];
+            const offLabel = off ? ({
+              pending: 'Off-ramp pendente',
+              burning: 'Queimando TESOURO',
+              burned: 'Aguardando PIX',
+              paid: 'PIX recebido',
+              failed: 'Off-ramp falhou',
+            } as Record<string, string>)[off.status] ?? off.status : null;
+            const offTone = off?.status === 'paid' ? 'bg-success/10 text-success'
+              : off?.status === 'failed' ? 'bg-destructive/10 text-destructive'
+              : 'bg-tikin-orange/10 text-tikin-orange';
             return (
               <div key={tx.id} className="p-4 flex items-start gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -184,6 +208,17 @@ export default function LojistaExtrato() {
                       <p className="text-[10px] text-tikin-navy/40 mt-0.5">
                         {format(new Date(tx.created_at), 'dd/MM/yyyy HH:mm')}
                       </p>
+                      {off && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${offTone}`}>{offLabel}</span>
+                          {off.stellar_burn_tx_hash && (
+                            <StellarHashLink hash={off.stellar_burn_tx_hash} label="Queima TESOURO" />
+                          )}
+                          {off.status === 'failed' && off.error && (
+                            <span className="text-[10px] text-destructive/70 italic">{off.error}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <span className={`font-heading font-black text-sm ${isCredit ? 'text-success' : 'text-destructive'}`}>
                       {isCredit ? '+' : '-'} R$ {brl(Number(tx.amount))}
@@ -193,6 +228,7 @@ export default function LojistaExtrato() {
               </div>
             );
           })}
+
         </div>
       </main>
       <MobileNav />

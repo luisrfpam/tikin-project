@@ -43,6 +43,8 @@ const OP_LABEL: Record<string, string> = {
   'beneficiary.link': 'Vinculação de beneficiário',
   create_charge: 'Gerar cobrança',
   'charge.create': 'Cobrança gerada pelo lojista',
+  offramp_burn: 'Off-ramp: queima de TESOURO',
+  onramp_pix_settled: 'On-ramp: PIX liquidado',
 };
 
 const OP_DESC: Record<string, string> = {
@@ -57,13 +59,27 @@ const OP_DESC: Record<string, string> = {
   'beneficiary.link': 'Emitente vinculou um beneficiário ao seu programa para que possa receber vouchers (operação não-financeira)',
   create_charge: 'Lojista gerou cobrança para receber via voucher',
   'charge.create': 'Lojista gerou uma cobrança para ser paga com voucher',
+  offramp_burn: 'TESOURO devolvido ao emissor on-chain (off-ramp para PIX do lojista)',
+  onramp_pix_settled: 'PIX recebido foi convertido em TESOURO na carteira do emissor',
 };
 
 const PERIOD_OPTIONS = [5, 10, 15, 30, 45, 90];
 
+interface WalletInfo { publicKey: string; xlm: string; tesouro: string; }
+
+interface OnrampRow {
+  id: string;
+  amount_brl: number;
+  status: string;
+  stellar_tx_hash: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
 export default function EmissorBlockchain() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
+  const [onramps, setOnramps] = useState<OnrampRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
@@ -73,6 +89,7 @@ export default function EmissorBlockchain() {
   const [customTo, setCustomTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [wallet, setWallet] = useState<WalletInfo | null>(null);
 
   useEffect(() => { setPage(1); }, [search, entityFilter, statusFilter, periodDays, customFrom, customTo, pageSize]);
 
@@ -80,12 +97,44 @@ export default function EmissorBlockchain() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
-      .from('blockchain_transactions')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500);
+    const { data: iss } = await supabase.from('issuers').select('id').eq('user_id', user!.id).maybeSingle();
+    if (!iss) { setRows([]); setLoading(false); return; }
+
+    // Ensure this issuer has its own Stellar wallet (creates + funds via friendbot on first call)
+    let walletKey: string | null = null;
+    const { data: w0 } = await supabase.from('issuer_stellar_wallets').select('public_key').eq('issuer_id', iss.id).maybeSingle();
+    if (w0?.public_key) {
+      walletKey = w0.public_key;
+    } else {
+      try {
+        const { data: ensured } = await supabase.functions.invoke('stellar-ensure-wallet', { body: { issuer_id: iss.id } });
+        if ((ensured as any)?.public_key) walletKey = (ensured as any).public_key;
+      } catch (e) { console.error('ensure wallet', e); }
+    }
+
+    const [{ data }, { data: ords }] = await Promise.all([
+      supabase.from('blockchain_transactions').select('*').eq('issuer_id', iss.id).order('created_at', { ascending: false }).limit(500),
+      supabase.from('onramp_orders').select('id, amount_brl, status, stellar_tx_hash, created_at, expires_at').eq('issuer_id', iss.id).order('created_at', { ascending: false }).limit(50),
+    ]);
     setRows((data as any) || []);
+    setOnramps((ords as any) || []);
+
+    if (walletKey) {
+      let xlm = '0', tesouro = '0';
+      try {
+        const r = await fetch(`https://horizon-testnet.stellar.org/accounts/${walletKey}`);
+        if (r.ok) {
+          const j = await r.json();
+          for (const b of (j.balances || [])) {
+            if (b.asset_type === 'native') xlm = b.balance;
+            else if (b.asset_code === 'TESOURO') tesouro = b.balance;
+          }
+        }
+      } catch { /* not yet funded */ }
+      setWallet({ publicKey: walletKey, xlm, tesouro });
+    } else {
+      setWallet(null);
+    }
     setLoading(false);
   }
 
@@ -119,18 +168,88 @@ export default function EmissorBlockchain() {
   if (loading) return <div className="min-h-screen bg-tikin-navy flex items-center justify-center"><Loader2 className="text-tikin-orange animate-spin" /></div>;
 
   return (
-    <EmissorLayout title="Registros na Blockchain" subtitle="Transações registradas na Stellar Testnet" right={<StellarBadge />}>
+    <EmissorLayout title="Registros na Blockchain" subtitle="Transações registradas na Stellar Testnet">
       <div className="p-4 sm:p-8 space-y-5 max-w-7xl">
-        {/* Carteira */}
+        {/* Carteira do emissor */}
         <div className="bg-gradient-to-br from-tikin-orange/10 to-tikin-orange/5 border border-tikin-orange/30 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">Carteira do emissor (Testnet)</p>
-            <p className="font-mono text-sm break-all">{STELLAR_PUBLIC_KEY}</p>
+            <p className="font-mono text-sm break-all">{wallet?.publicKey || <span className="text-white/40">criando carteira do emissor…</span>}</p>
+            {wallet && (
+              <div className="flex gap-4 mt-2 text-[11px]">
+                <span className="text-white/60">XLM: <span className="font-bold text-white">{Number(wallet.xlm).toFixed(2)}</span></span>
+                <span className="text-tikin-orange">TESOURO: <span className="font-bold">{brl(Number(wallet.tesouro))}</span></span>
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
-            <button onClick={() => { navigator.clipboard.writeText(STELLAR_PUBLIC_KEY); toast.success('Endereço copiado'); }} className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-bold flex items-center gap-1.5"><Copy size={12} /> COPIAR</button>
-            <a href={`https://stellar.expert/explorer/testnet/account/${STELLAR_PUBLIC_KEY}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg bg-tikin-orange text-xs font-bold flex items-center gap-1.5"><ExternalLink size={12} /> EXPLORER</a>
+            <button disabled={!wallet} onClick={() => { if (wallet) { navigator.clipboard.writeText(wallet.publicKey); toast.success('Endereço copiado'); } }} className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40"><Copy size={12} /> COPIAR</button>
+            <a href={wallet ? `https://stellar.expert/explorer/testnet/account/${wallet.publicKey}` : '#'} onClick={e => { if (!wallet) e.preventDefault(); }} target="_blank" rel="noreferrer" className={`px-3 py-2 rounded-lg bg-tikin-orange text-xs font-bold flex items-center gap-1.5 ${!wallet ? 'opacity-40 pointer-events-none' : ''}`}><ExternalLink size={12} /> EXPLORER</a>
           </div>
+        </div>
+
+        {/* On-ramps PIX → TESOURO */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-tikin-orange font-black">Etherfuse · BRL → TESOURO</p>
+              <p className="text-xs text-white/50 mt-0.5">Histórico de aportes PIX que viraram lastro on-chain na carteira do emissor</p>
+            </div>
+            <span className="text-[10px] text-white/40">{onramps.length} ordens</span>
+          </div>
+          <div className="px-5 py-2 bg-white/[0.02] border-b border-white/10 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-white/50">
+            <span className="uppercase font-bold text-white/40">Asset:</span>
+            <span className="font-mono text-tikin-orange">TESOURO</span>
+            <span className="text-white/30">·</span>
+            <span className="uppercase font-bold text-white/40">Emissor on-chain (origem):</span>
+            <a href={`https://stellar.expert/explorer/testnet/account/${STELLAR_PUBLIC_KEY}`} target="_blank" rel="noreferrer" className="font-mono text-white/70 hover:text-tikin-orange truncate max-w-[180px]">{STELLAR_PUBLIC_KEY.slice(0,6)}…{STELLAR_PUBLIC_KEY.slice(-4)}</a>
+            <span className="text-white/30">→</span>
+            <span className="uppercase font-bold text-white/40">Carteira do emissor (destino):</span>
+            <a href={`https://stellar.expert/explorer/testnet/account/${wallet?.publicKey || ''}`} target="_blank" rel="noreferrer" className="font-mono text-white/70 hover:text-tikin-orange truncate max-w-[180px]">{wallet ? `${wallet.publicKey.slice(0,6)}…${wallet.publicKey.slice(-4)}` : '—'}</a>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-white/[0.02] text-[10px] uppercase text-white/40 font-bold">
+              <tr>
+                <th className="px-5 py-3">Quando</th>
+                <th className="px-5 py-3 text-right">Valor</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Transferência TESOURO</th>
+                <th className="px-5 py-3">Hash da transação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {onramps.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-xs text-white/40">Nenhum on-ramp ainda</td></tr>}
+              {onramps.map(o => {
+                const from = STELLAR_PUBLIC_KEY;
+                const to = wallet?.publicKey || '';
+                const settled = o.status === 'paid' && !!o.stellar_tx_hash;
+                return (
+                  <tr key={o.id} className="border-t border-white/5">
+                    <td className="px-5 py-3 text-xs text-white/60 whitespace-nowrap">{format(parseISO(o.created_at), 'dd/MM/yy HH:mm')}</td>
+                    <td className="px-5 py-3 text-right text-xs font-heading font-black whitespace-nowrap">R$ {brl(Number(o.amount_brl))}</td>
+                    <td className="px-5 py-3">
+                      {o.status === 'paid' && <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">PAGO</span>}
+                      {o.status === 'pending' && <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>}
+                      {o.status === 'expired' && <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 text-[10px] font-bold">EXPIRADA</span>}
+                      {o.status === 'failed' && <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">FALHA</span>}
+                    </td>
+                    <td className="px-5 py-3">
+                      {settled ? (
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                          <a href={`https://stellar.expert/explorer/testnet/account/${from}`} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-white/70" title={from}>{from.slice(0,4)}…{from.slice(-4)}</a>
+                          <span className="text-tikin-orange">— {brl(Number(o.amount_brl))} TESOURO →</span>
+                          <a href={`https://stellar.expert/explorer/testnet/account/${to}`} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-tikin-orange/10 hover:bg-tikin-orange/20 text-tikin-orange" title={to}>{to ? `${to.slice(0,4)}…${to.slice(-4)}` : '—'}</a>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-white/30">aguardando PIX</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3"><StellarHashLink hash={o.stellar_tx_hash} label="Pagamento TESOURO" /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {/* KPIs */}

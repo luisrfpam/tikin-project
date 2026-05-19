@@ -1,0 +1,111 @@
+// Burns TESOURO from an issuer's Stellar wallet by sending it back to the
+// master (asset issuer). In Stellar, sending an asset to its issuer destroys it.
+import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import {
+  Horizon,
+  Keypair,
+  TransactionBuilder,
+  Networks,
+  Operation,
+  Asset,
+  Memo,
+} from "npm:stellar-sdk@12.3.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const HORIZON_URL = "https://horizon-testnet.stellar.org";
+const ASSET_CODE = "TESOURO";
+
+async function decryptSecret(b64: string, key: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyBuf = await crypto.subtle.digest("SHA-256", enc.encode(key));
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBuf, { name: "AES-GCM" }, false, ["decrypt"]);
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const iv = bytes.slice(0, 12);
+  const ct = bytes.slice(12);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ct);
+  return new TextDecoder().decode(pt);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const masterSecret = Deno.env.get("STELLAR_SECRET_KEY")!;
+    const { issuer_id, amount, internal_id } = await req.json() as { issuer_id: string; amount: number; internal_id?: string };
+    if (!issuer_id || !(amount > 0)) {
+      return new Response(JSON.stringify({ error: "issuer_id e amount obrigatórios" }), { status: 400, headers: corsHeaders });
+    }
+
+    const { data: wallet } = await admin
+      .from("issuer_stellar_wallets")
+      .select("public_key, secret_encrypted")
+      .eq("issuer_id", issuer_id)
+      .maybeSingle();
+    if (!wallet) return new Response(JSON.stringify({ error: "Wallet do emissor não encontrada" }), { status: 404, headers: corsHeaders });
+
+    const master = Keypair.fromSecret(masterSecret);
+    const issuerSecret = await decryptSecret(wallet.secret_encrypted, masterSecret);
+    const issuerKp = Keypair.fromSecret(issuerSecret);
+    const server = new Horizon.Server(HORIZON_URL);
+    const asset = new Asset(ASSET_CODE, master.publicKey());
+
+    const issuerAcc = await server.loadAccount(issuerKp.publicKey());
+    // Validate balance
+    const bal = issuerAcc.balances.find((b: any) =>
+      b.asset_type !== "native" && b.asset_code === ASSET_CODE && b.asset_issuer === master.publicKey()
+    );
+    const available = Number(bal?.balance ?? 0);
+    if (available < Number(amount)) {
+      const err = `Saldo TESOURO insuficiente na carteira do emissor (disponível ${available})`;
+      return new Response(JSON.stringify({ success: false, error: err }), { status: 400, headers: corsHeaders });
+    }
+
+    const fee = await server.fetchBaseFee();
+    const tx = new TransactionBuilder(issuerAcc, {
+      fee: String(fee),
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(Operation.payment({
+        destination: master.publicKey(), // sending back to asset issuer => burn
+        asset,
+        amount: Number(amount).toFixed(7),
+      }))
+      .addMemo(Memo.text(`offramp:${(internal_id || "").slice(0, 20)}`))
+      .setTimeout(60)
+      .build();
+    tx.sign(issuerKp);
+    const txHash = tx.hash().toString("hex");
+    const result = await server.submitTransaction(tx);
+    const hash = (result as any).hash || txHash;
+
+    // Log to blockchain_transactions
+    await admin.from("blockchain_transactions").insert({
+      operation: "offramp_burn",
+      amount: Number(amount),
+      stellar_tx_hash: hash,
+      stellar_ledger: (result as any).ledger ?? null,
+      status: "success",
+      issuer_id,
+      internal_id: internal_id || crypto.randomUUID(),
+      entity_type: "offramp_order",
+    });
+
+    return new Response(JSON.stringify({
+      success: true,
+      hash,
+      from: issuerKp.publicKey(),
+      to: master.publicKey(),
+      amount: Number(amount),
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (e: any) {
+    const detail = e?.response?.data?.extras?.result_codes
+      ? JSON.stringify(e.response.data.extras.result_codes)
+      : String(e?.message ?? e);
+    console.error("stellar-burn-tesouro", detail);
+    return new Response(JSON.stringify({ success: false, error: detail }), { status: 500, headers: corsHeaders });
+  }
+});

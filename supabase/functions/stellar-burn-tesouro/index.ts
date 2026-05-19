@@ -33,11 +33,35 @@ async function decryptSecret(b64: string, key: string): Promise<string> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+    const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+
+    const { data: { user }, error: userErr } = await userClient.auth.getUser();
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
     const masterSecret = Deno.env.get("STELLAR_SECRET_KEY")!;
     const { issuer_id, amount, internal_id } = await req.json() as { issuer_id: string; amount: number; internal_id?: string };
     if (!issuer_id || !(amount > 0)) {
       return new Response(JSON.stringify({ error: "issuer_id e amount obrigatórios" }), { status: 400, headers: corsHeaders });
+    }
+
+    const { data: issuer } = await admin
+      .from("issuers")
+      .select("id")
+      .eq("id", issuer_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!issuer) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
     }
 
     const { data: wallet } = await admin

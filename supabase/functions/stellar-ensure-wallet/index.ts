@@ -58,12 +58,11 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
 
-    let issuerId: string | null = null;
-    try { const b = await req.json(); if (b?.issuer_id) issuerId = b.issuer_id; } catch {}
-
-    let issuerQuery = admin.from("issuers").select("id, user_id");
-    issuerQuery = issuerId ? issuerQuery.eq("id", issuerId) : issuerQuery.eq("user_id", user.id);
-    const { data: issuer } = await issuerQuery.maybeSingle();
+    const { data: issuer } = await admin
+      .from("issuers")
+      .select("id, user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
     if (!issuer) return new Response(JSON.stringify({ error: "Emissor não encontrado" }), { status: 404, headers: corsHeaders });
     if (issuer.user_id !== user.id) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
 

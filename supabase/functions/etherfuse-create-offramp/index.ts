@@ -19,9 +19,16 @@ Deno.serve(async (req) => {
     if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
 
     const url = Deno.env.get("SUPABASE_URL")!;
+    const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const etherfuseKey = Deno.env.get("ETHERFUSE_API_KEY") || "";
+    const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } } });
     const admin = createClient(url, service);
+
+    const { data: { user }, error: userErr } = await userClient.auth.getUser();
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
 
     const { transaction_id } = await req.json() as { transaction_id: string };
     if (!transaction_id) {
@@ -39,8 +46,15 @@ Deno.serve(async (req) => {
       .eq("id", transaction_id).single();
     if (txErr || !tx) return new Response(JSON.stringify({ error: "Transação não encontrada" }), { status: 404, headers: corsHeaders });
 
-    const { data: voucher } = await admin.from("vouchers").select("id, issuer_id").eq("id", tx.voucher_id).single();
+    const { data: voucher } = await admin
+      .from("vouchers")
+      .select("id, issuer_id, beneficiary_id")
+      .eq("id", tx.voucher_id)
+      .single();
     if (!voucher) return new Response(JSON.stringify({ error: "Voucher não encontrado" }), { status: 404, headers: corsHeaders });
+    if (!voucher.beneficiary_id || voucher.beneficiary_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Acesso negado" }), { status: 403, headers: corsHeaders });
+    }
 
     const { data: pixKey } = await admin.from("merchant_pix_keys")
       .select("key_type, key_value")
@@ -73,8 +87,9 @@ Deno.serve(async (req) => {
       const burnRes = await fetch(`${url}/functions/v1/stellar-burn-tesouro`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${service}`,
+          "Authorization": auth,
           "Content-Type": "application/json",
+          apikey: anon,
         },
         body: JSON.stringify({
           issuer_id: voucher.issuer_id,

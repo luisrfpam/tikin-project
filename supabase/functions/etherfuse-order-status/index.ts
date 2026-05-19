@@ -27,6 +27,9 @@ Deno.serve(async (req) => {
     const orderId = body.order_id as string;
     const force = body.force as ("pay" | "expire" | undefined);
     if (!orderId) return new Response(JSON.stringify({ error: "order_id obrigatório" }), { status: 400, headers: corsHeaders });
+    if (force) {
+      return new Response(JSON.stringify({ error: "force não permitido" }), { status: 403, headers: corsHeaders });
+    }
 
     const { data: order } = await admin.from("onramp_orders").select("*").eq("id", orderId).maybeSingle();
     if (!order) return new Response(JSON.stringify({ error: "Order não encontrada" }), { status: 404, headers: corsHeaders });
@@ -55,10 +58,6 @@ Deno.serve(async (req) => {
       }
     } catch { /* ignore */ }
 
-    // Demo controls (sandbox)
-    if (force === "pay") newStatus = "paid";
-    if (force === "expire") newStatus = "expired";
-
     // Expire by time
     if (newStatus === "pending" && order.expires_at && new Date(order.expires_at).getTime() < Date.now()) {
       newStatus = "expired";
@@ -72,7 +71,7 @@ Deno.serve(async (req) => {
         try {
           const issueRes = await fetch(`${url}/functions/v1/stellar-issue-tesouro`, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${service}`, "Content-Type": "application/json", apikey: service },
+            headers: { "Authorization": auth, "Content-Type": "application/json", apikey: anon },
             body: JSON.stringify({
               issuer_id: order.issuer_id,
               amount: Number(order.amount_brl),

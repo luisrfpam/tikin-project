@@ -13,6 +13,8 @@ export default function LojistaReceber() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [establishmentId, setEstablishmentId] = useState('');
+  const [hasDefaultPix, setHasDefaultPix] = useState(false);
+  const [checkingPixConfig, setCheckingPixConfig] = useState(true);
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState('');
 
@@ -29,7 +31,20 @@ export default function LojistaReceber() {
   useEffect(() => {
     if (!user) return;
     supabase.from('establishments').select('id').eq('user_id', user.id).single()
-      .then(({ data }) => { if (data) setEstablishmentId(data.id); });
+      .then(async ({ data }) => {
+        if (!data) {
+          setCheckingPixConfig(false);
+          return;
+        }
+        setEstablishmentId(data.id);
+        const { count } = await supabase
+          .from('merchant_pix_keys')
+          .select('id', { count: 'exact', head: true })
+          .eq('establishment_id', data.id)
+          .eq('is_default', true);
+        setHasDefaultPix((count ?? 0) > 0);
+        setCheckingPixConfig(false);
+      });
   }, [user]);
 
   // Poll the charge until paid (so the lojista can show "received" automatically)
@@ -48,6 +63,11 @@ export default function LojistaReceber() {
 
   const generateQR = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (checkingPixConfig) return;
+    if (!hasDefaultPix) {
+      toast.warning('Cadastre e defina uma chave PIX padrão em Perfil > PIX para cobrar e gerar QR Code.');
+      return;
+    }
     const v = amountCents / 100;
     if (!v || v <= 0) return toast.error('Informe um valor válido');
     if (!establishmentId) return toast.error('Estabelecimento não encontrado');
@@ -99,6 +119,12 @@ export default function LojistaReceber() {
               <p className="text-xs text-tikin-navy/50 mt-1">Gere um QR Code para o cliente pagar pelo app.</p>
             </div>
 
+            {!checkingPixConfig && !hasDefaultPix && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                Para gerar cobrança, cadastre ao menos 1 chave PIX e marque uma como padrão em Perfil &gt; PIX.
+              </div>
+            )}
+
             <div>
               <label className="text-[10px] font-extrabold text-tikin-navy/50 uppercase tracking-wider">Valor da cobrança (R$)</label>
               <input
@@ -122,10 +148,10 @@ export default function LojistaReceber() {
               />
             </div>
 
-            <button type="submit" disabled={generating}
+            <button type="submit" disabled={generating || checkingPixConfig || !hasDefaultPix}
               className="w-full bg-tikin-orange text-white py-4 rounded-2xl font-heading font-extrabold flex items-center justify-center gap-2 shadow-orange disabled:opacity-60">
               {generating ? <Loader2 size={18} className="animate-spin" /> : <QrCode size={20} />}
-              {generating ? 'GERANDO...' : 'GERAR QR CODE'}
+              {checkingPixConfig ? 'VERIFICANDO...' : generating ? 'GERANDO...' : 'GERAR QR CODE'}
             </button>
           </form>
         )}

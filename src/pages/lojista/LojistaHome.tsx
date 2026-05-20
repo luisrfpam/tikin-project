@@ -8,6 +8,7 @@ import { QrCode, Check, DollarSign, Zap, Shield } from 'lucide-react';
 import { format } from 'date-fns';
 import { categoryLabel } from '@/lib/categories';
 import { enrichBeneficiaryNames } from '@/lib/enrichTx';
+import { toast } from 'sonner';
 
 export default function LojistaHome() {
   const { profile, user, signOut } = useAuth();
@@ -15,12 +16,21 @@ export default function LojistaHome() {
   const [totalReceived, setTotalReceived] = useState(0);
   const [txs, setTxs] = useState<any[]>([]);
   const [status, setStatus] = useState<string>('active');
+  const [hasDefaultPix, setHasDefaultPix] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     supabase.from('establishments').select('id, status').eq('user_id', user.id).single().then(async ({ data: est }) => {
       if (!est) return;
       setStatus((est as any).status || 'active');
+
+      const { count } = await supabase
+        .from('merchant_pix_keys')
+        .select('id', { count: 'exact', head: true })
+        .eq('establishment_id', est.id)
+        .eq('is_default', true);
+      setHasDefaultPix((count ?? 0) > 0);
+
       const { data } = await supabase.from('transactions').select('*').eq('establishment_id', est.id).order('created_at', { ascending: false });
       const all = await enrichBeneficiaryNames((data as any[]) ?? []);
       setTxs(all.slice(0, 8));
@@ -30,6 +40,14 @@ export default function LojistaHome() {
       }, 0));
     });
   }, [user]);
+
+  const handleChargeNow = () => {
+    if (!hasDefaultPix) {
+      toast.warning('Para cobrar, cadastre e defina uma chave PIX padrão em Perfil > PIX.');
+      return;
+    }
+    navigate('/lojista/receber');
+  };
 
   return (
     <div className="min-h-screen bg-[#FFFAF5] pb-28">
@@ -93,11 +111,21 @@ export default function LojistaHome() {
 
         {/* Action */}
         <button
-          onClick={() => navigate('/lojista/receber')}
-          className="w-full flex items-center justify-center gap-3 bg-tikin-navy text-white py-5 rounded-2xl font-heading font-extrabold shadow-elevated"
+          onClick={handleChargeNow}
+          aria-disabled={!hasDefaultPix}
+          className={`w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-heading font-extrabold shadow-elevated transition-opacity ${
+            hasDefaultPix
+              ? 'bg-tikin-navy text-white'
+              : 'bg-tikin-navy/40 text-white cursor-not-allowed'
+          }`}
         >
           <QrCode size={24} /> COBRAR AGORA
         </button>
+        {!hasDefaultPix && (
+          <p className="text-xs text-tikin-navy/60 text-center -mt-2">
+            Cadastre uma chave PIX padrão no Perfil para habilitar cobranças.
+          </p>
+        )}
 
         {/* Recent */}
         <section className="bg-white rounded-2xl p-5 border border-tikin-orange/10">

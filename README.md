@@ -183,7 +183,7 @@ npm run build
 
 - [Termos de Uso](https://tikinapp.com.br/termos)
 - [Política de Privacidade](https://tikinapp.com.br/privacidade)
-- [Segurança](https://tikinapp.com.br/security)
+- [Segurança](https://tikinapp.com.br/seguranca)
 
 ---
 

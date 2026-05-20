@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
+import { toast } from 'sonner';
+
+const MAX_SESSION_AGE_MS = 12 * 60 * 60 * 1000;
 
 type AppRole = 'emissor' | 'beneficiario' | 'lojista';
 
@@ -16,6 +19,26 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function getSessionStartAt(session: Session): number | null {
+  const lastSignInAt = session.user.last_sign_in_at;
+  if (lastSignInAt) {
+    const parsed = Date.parse(lastSignInAt);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  if (typeof session.expires_at === 'number' && typeof session.expires_in === 'number') {
+    return (session.expires_at - session.expires_in) * 1000;
+  }
+
+  return null;
+}
+
+function isSessionExpiredByAge(session: Session): boolean {
+  const startedAt = getSessionStartAt(session);
+  if (!startedAt) return false;
+  return Date.now() - startedAt > MAX_SESSION_AGE_MS;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -45,8 +68,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let currentUserId: string | null = null;
+    let didShowSessionExpiredToast = false;
+
+    const handleSessionExpired = () => {
+      if (!didShowSessionExpiredToast) {
+        toast.warning('Sua sessão expirou após 12 horas. Faça login novamente para continuar.', {
+          id: 'session-expired-12h',
+        });
+        didShowSessionExpiredToast = true;
+      }
+
+      supabase.auth.signOut().finally(() => {
+        setSession(null);
+        setUser(null);
+        setRoles([]);
+        setActiveRole(null);
+        setProfile(null);
+        setLoading(false);
+      });
+    };
 
     const applySession = (session: Session | null, fetchProfile: boolean) => {
+      if (session && isSessionExpiredByAge(session)) {
+        handleSessionExpired();
+        return;
+      }
+
+      if (session) {
+        didShowSessionExpiredToast = false;
+      }
+
       setSession(session);
       const nextUser = session?.user ?? null;
       const nextId = nextUser?.id ?? null;
@@ -75,7 +126,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applySession(session, true);
     });
 
-    return () => subscription.unsubscribe();
+    const validateSessionAge = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && isSessionExpiredByAge(session)) {
+        applySession(session, false);
+      }
+    };
+
+    const intervalId = window.setInterval(validateSessionAge, 60 * 1000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void validateSessionAge();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      subscription.unsubscribe();
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   const signOut = async () => {

@@ -1,4 +1,4 @@
-project_id = "dhrlcceajpzojazrndvr"
+project_id = "oeevjolpgqafqzvnviqs"
 
 [functions.stellar-issue-tesouro]
 verify_jwt = false

@@ -83,6 +83,7 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const navigate = useNavigate();
@@ -141,6 +142,55 @@ export default function LoginPage() {
     setIdentifier(raw);
   };
 
+  const resolveEmailFromIdentifier = async (value: string) => {
+    if (value.includes('@')) {
+      if (!isValidEmail(value)) {
+        throw new Error('E-mail inválido');
+      }
+      return value;
+    }
+
+    const digits = onlyDigits(value);
+    if (role === 'beneficiario' && digits.length !== 11) {
+      throw new Error('CPF deve ter 11 dígitos');
+    }
+    if (role !== 'beneficiario' && digits.length !== 14) {
+      throw new Error('CNPJ deve ter 14 dígitos');
+    }
+
+    const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: digits });
+    if (error || !data) {
+      throw new Error('Não foi possível localizar um cadastro ativo para esse identificador');
+    }
+
+    return data;
+  };
+
+  const handleResendActivation = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const value = identifier.trim();
+    if (!value) return toast.error('Informe seu identificador para reenviar a ativação');
+
+    try {
+      setResendLoading(true);
+      const email = await resolveEmailFromIdentifier(value);
+      const emailRedirectTo = `${window.location.origin}/ativar-cadastro`;
+
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo },
+      });
+
+      if (error) throw error;
+      toast.success('Enviamos um novo link de ativação para o e-mail cadastrado.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Não foi possível reenviar a ativação.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const value = identifier.trim();
@@ -175,7 +225,7 @@ export default function LoginPage() {
       email = data;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       const msg = (error.message || '').toLowerCase();
@@ -185,6 +235,21 @@ export default function LoginPage() {
       }
       registerFailure();
     } else {
+      const userId = signInData.user?.id;
+      if (role === 'beneficiario' || role === 'lojista') {
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId || '');
+
+        const hasActiveRole = !rolesError && Boolean(rolesData?.length);
+        if (!hasActiveRole) {
+          await supabase.auth.signOut();
+          toast.error('Seu cadastro ainda não está ativo. Aguarde a liberação ou solicite um novo link de ativação.');
+          return;
+        }
+      }
+
       if (role === 'emissor') {
         const { data: enabledData, error: enabledError } = await supabase.rpc('is_current_issuer_enabled');
         if (enabledError || !enabledData) {
@@ -293,7 +358,17 @@ export default function LoginPage() {
               </div>
             )}
 
-            <div className="flex justify-end items-center text-sm">
+            <div className="flex flex-wrap justify-end items-center gap-4 text-sm">
+              {(role === 'beneficiario' || role === 'lojista') && (
+                <button
+                  type="button"
+                  onClick={handleResendActivation}
+                  disabled={resendLoading}
+                  className="text-tikin-navy font-extrabold underline disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {resendLoading ? 'REENVIANDO...' : 'REENVIAR ATIVAÇÃO'}
+                </button>
+              )}
               <Link to="/recuperar-senha" className="text-tikin-navy font-extrabold underline">Recuperar senha</Link>
             </div>
 

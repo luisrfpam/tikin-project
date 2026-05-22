@@ -160,6 +160,33 @@ async function signupCommon(email: string, password: string, metadata: SignupMet
   return result;
 }
 
+function getSignupErrorMessage(errorMessage?: string) {
+  const msg = (errorMessage || '').toLowerCase();
+  if (!msg) return 'Não foi possível concluir o cadastro. Tente novamente.';
+
+  if (msg.includes('user already registered') || msg.includes('already registered')) {
+    return 'E-mail já cadastrado. Faça login ou recupere sua senha.';
+  }
+
+  if (msg.includes('database error saving new user')) {
+    return 'CPF/CNPJ já cadastrado. Faça login ou recupere sua conta.';
+  }
+
+  return errorMessage || 'Não foi possível concluir o cadastro. Tente novamente.';
+}
+
+async function ensureIdentifierAvailable(identifier: string, label: 'CPF' | 'CNPJ') {
+  const digits = identifier.replace(/\D/g, '');
+  if (!digits) return;
+
+  const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: digits });
+  if (error) return;
+
+  if (data) {
+    throw new Error(`${label} já cadastrado. Use outro ${label} ou faça login/recupere sua conta.`);
+  }
+}
+
 function EmpresaForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ razao_social: '', cnpj: '', responsible_name: '', responsible_role: '', corporate_email: '', password: '' });
@@ -174,6 +201,11 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
     if (!form.responsible_role.trim()) return toast.error('Informe o cargo');
     if (!isValidEmail(form.corporate_email)) return toast.error('E-mail corporativo inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+    try {
+      await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
+    } catch (e: any) {
+      return toast.error(e?.message || 'CNPJ já cadastrado.');
+    }
     setLoading(true);
     const { data, error } = await signupCommon(form.corporate_email, form.password, {
       name: form.responsible_name,
@@ -185,7 +217,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
       responsible_role: form.responsible_role,
       corporate_email: form.corporate_email,
     });
-    if (error) { toast.error(error.message); setLoading(false); return; }
+    if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
 
     // Provisiona carteira Stellar própria do emissor após o registro.
     // O trigger no banco cria o registro de issuer; aqui apenas vinculamos a carteira.
@@ -241,13 +273,18 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
     if (!isValidCPF(form.cpf)) return toast.error('CPF inválido');
     if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+    try {
+      await ensureIdentifierAvailable(form.cpf, 'CPF');
+    } catch (e: any) {
+      return toast.error(e?.message || 'CPF já cadastrado.');
+    }
     setLoading(true);
     const { data, error } = await signupCommon(form.email, form.password, {
       name: form.name,
       role: 'beneficiario',
       cpf: form.cpf,
     });
-    if (error) { toast.error(error.message); setLoading(false); return; }
+    if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
     setLoading(false);
     navigate('/login');
@@ -326,6 +363,11 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
     if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
     const fullAddress = `${form.logradouro}, ${form.numero}${form.complemento ? ' - ' + form.complemento : ''} - ${form.bairro}, ${form.cidade}/${form.uf}`;
+    try {
+      await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
+    } catch (e: any) {
+      return toast.error(e?.message || 'CNPJ já cadastrado.');
+    }
     setLoading(true);
     const { data, error } = await signupCommon(form.email, form.password, {
       name: form.trade_name,
@@ -344,7 +386,7 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
       address: fullAddress,
       contact_email: form.email,
     });
-    if (error) { toast.error(error.message); setLoading(false); return; }
+    if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
     setLoading(false);
     navigate('/login');

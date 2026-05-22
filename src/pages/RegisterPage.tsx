@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Building2, User, Store, ArrowLeft } from 'lucide-react';
+import { Building2, User, Store, ArrowLeft, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,29 @@ import { maskCPF, maskCNPJ, maskCEP, isValidCPF, isValidCNPJ, isValidCEP, isVali
 import { useCategories } from '@/lib/categories';
 
 type Profile = 'empresa' | 'beneficiario' | 'lojista' | null;
+
+type SignupMetadata = {
+  name: string;
+  role: 'emissor' | 'beneficiario' | 'lojista';
+  cpf?: string;
+  cnpj?: string;
+  company_name?: string;
+  razao_social?: string;
+  responsible_name?: string;
+  responsible_role?: string;
+  corporate_email?: string;
+  trade_name?: string;
+  category?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  address?: string;
+  contact_email?: string;
+};
 
 export default function RegisterPage() {
   const [profile, setProfile] = useState<Profile>(null);
@@ -108,12 +131,32 @@ function BackBtn({ onBack, color = 'navy' }: { onBack: () => void; color?: 'navy
   );
 }
 
-async function signupCommon(email: string, password: string, name: string) {
-  return supabase.auth.signUp({
+async function signupCommon(email: string, password: string, metadata: SignupMetadata) {
+  const redirectPath = metadata.role === 'beneficiario' || metadata.role === 'lojista'
+    ? '/ativar-cadastro'
+    : '/login';
+  const emailRedirectTo = `${window.location.origin}${redirectPath}`;
+
+  const result = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { name }, emailRedirectTo: `${window.location.origin}/` },
+    options: {
+      data: metadata,
+      emailRedirectTo,
+    },
   });
+
+  // Se não houver sessão ativa após signup, o projeto exige confirmação por e-mail.
+  // Tentamos reenvio explícito para reduzir casos em que o usuário não recebe a primeira mensagem.
+  if (!result.error && result.data.user && !result.data.session) {
+    await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo },
+    });
+  }
+
+  return result;
 }
 
 function EmpresaForm({ onBack }: { onBack: () => void }) {
@@ -131,29 +174,37 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
     if (!isValidEmail(form.corporate_email)) return toast.error('E-mail corporativo inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
     setLoading(true);
-    const { data, error } = await signupCommon(form.corporate_email, form.password, form.responsible_name);
+    const { data, error } = await signupCommon(form.corporate_email, form.password, {
+      name: form.responsible_name,
+      role: 'emissor',
+      cnpj: form.cnpj,
+      company_name: form.razao_social,
+      razao_social: form.razao_social,
+      responsible_name: form.responsible_name,
+      responsible_role: form.responsible_role,
+      corporate_email: form.corporate_email,
+    });
     if (error) { toast.error(error.message); setLoading(false); return; }
+
+    // Provisiona carteira Stellar própria do emissor após o registro.
+    // O trigger no banco cria o registro de issuer; aqui apenas vinculamos a carteira.
     if (data.user) {
-      await supabase.from('profiles').update({ name: form.responsible_name, cnpj: form.cnpj }).eq('id', data.user.id);
-      await supabase.from('user_roles').insert([{ user_id: data.user.id, role: 'emissor' }]);
-      const { data: newIssuer } = await supabase.from('issuers').insert([{
-        user_id: data.user.id,
-        company_name: form.razao_social,
-        razao_social: form.razao_social,
-        cnpj: form.cnpj,
-        responsible_name: form.responsible_name,
-        responsible_role: form.responsible_role,
-        corporate_email: form.corporate_email,
-        fund_balance: 100000,
-      }]).select('id').maybeSingle();
-      // Provisiona carteira Stellar própria do emissor (não compartilha master)
-      if (newIssuer?.id) {
-        try { await supabase.functions.invoke('stellar-ensure-wallet', { body: { issuer_id: newIssuer.id } }); } catch (e) { console.error('ensure wallet', e); }
+      const { data: createdIssuer } = await supabase
+        .from('issuers')
+        .select('id')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+      if (createdIssuer?.id) {
+        try {
+          await supabase.functions.invoke('stellar-ensure-wallet', { body: { issuer_id: createdIssuer.id } });
+        } catch (e) {
+          console.error('ensure wallet', e);
+        }
       }
     }
-    toast.success('Conta criada! Verifique seu e-mail para confirmar.');
+    toast.success('Cadastro enviado! O time da TIKiN analisará e liberará seu acesso.');
     setLoading(false);
-    navigate('/login');
+    navigate('/emissor/aguardando-aprovacao');
   };
 
   return (
@@ -170,7 +221,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
         </div>
         <Input type="password" placeholder="Criar Senha de Acesso (mín. 6 caracteres)" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />
         <Button type="submit" disabled={loading} className="bg-tikin-navy hover:bg-tikin-navy/90 text-white font-heading font-extrabold py-6 mt-2">
-          {loading ? 'Criando...' : 'Criar Conta Institucional'}
+          {loading ? 'Enviando...' : 'Enviar cadastro para análise'}
         </Button>
       </form>
     </div>
@@ -190,12 +241,12 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
     if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
     setLoading(true);
-    const { data, error } = await signupCommon(form.email, form.password, form.name);
+    const { data, error } = await signupCommon(form.email, form.password, {
+      name: form.name,
+      role: 'beneficiario',
+      cpf: form.cpf,
+    });
     if (error) { toast.error(error.message); setLoading(false); return; }
-    if (data.user) {
-      await supabase.from('profiles').update({ name: form.name, cpf: form.cpf }).eq('id', data.user.id);
-      await supabase.from('user_roles').insert([{ user_id: data.user.id, role: 'beneficiario' }]);
-    }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
     setLoading(false);
     navigate('/login');
@@ -273,32 +324,26 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
     if (!form.uf.trim()) return toast.error('Informe a UF');
     if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
-    setLoading(true);
-    const { data, error } = await signupCommon(form.email, form.password, form.trade_name);
-    if (error) { toast.error(error.message); setLoading(false); return; }
     const fullAddress = `${form.logradouro}, ${form.numero}${form.complemento ? ' - ' + form.complemento : ''} - ${form.bairro}, ${form.cidade}/${form.uf}`;
-    if (data.user) {
-      await supabase.from('profiles').update({ name: form.trade_name, cnpj: form.cnpj }).eq('id', data.user.id);
-      await supabase.from('user_roles').insert([{ user_id: data.user.id, role: 'lojista' }]);
-      await supabase.from('establishments').insert([{
-        user_id: data.user.id,
-        name: form.razao_social,
-        trade_name: form.trade_name,
-        cnpj: form.cnpj,
-        category: form.category,
-        cep: form.cep,
-        logradouro: form.logradouro,
-        numero: form.numero,
-        complemento: form.complemento || null,
-        bairro: form.bairro,
-        cidade: form.cidade,
-        uf: form.uf,
-        address: fullAddress,
-        contact_email: form.email,
-        cnae: '5611201',
-        cnae_validated: true,
-      }]);
-    }
+    setLoading(true);
+    const { data, error } = await signupCommon(form.email, form.password, {
+      name: form.trade_name,
+      role: 'lojista',
+      cnpj: form.cnpj,
+      trade_name: form.trade_name,
+      company_name: form.razao_social,
+      category: form.category,
+      cep: form.cep,
+      logradouro: form.logradouro,
+      numero: form.numero,
+      complemento: form.complemento,
+      bairro: form.bairro,
+      cidade: form.cidade,
+      uf: form.uf,
+      address: fullAddress,
+      contact_email: form.email,
+    });
+    if (error) { toast.error(error.message); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
     setLoading(false);
     navigate('/login');
@@ -332,9 +377,29 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Input placeholder="Bairro" required className="md:col-span-2" value={form.bairro} onChange={e => set('bairro', e.target.value)} />
-          <Input placeholder="Cidade" required value={form.cidade} onChange={e => set('cidade', e.target.value)} />
-          <Input placeholder="UF" required maxLength={2} value={form.uf} onChange={e => set('uf', e.target.value.toUpperCase())} />
+          <div className="relative">
+            <Input
+              placeholder="Cidade"
+              required
+              value={form.cidade}
+              readOnly
+              className="bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed"
+            />
+            <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-tikin-navy/45 pointer-events-none" />
+          </div>
+          <div className="relative">
+            <Input
+              placeholder="UF"
+              required
+              maxLength={2}
+              value={form.uf}
+              readOnly
+              className="bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed"
+            />
+            <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-tikin-navy/45 pointer-events-none" />
+          </div>
         </div>
+        <p className="-mt-2 text-[11px] font-medium text-tikin-navy/55">Cidade e UF são preenchidos automaticamente a partir do CEP.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input type="email" placeholder="E-mail de Contato" required value={form.email} onChange={e => set('email', e.target.value)} />
           <Input type="password" placeholder="Criar Senha (mín. 6 caracteres)" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />

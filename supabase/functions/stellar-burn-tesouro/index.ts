@@ -34,33 +34,91 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const internalServiceKey = req.headers.get("x-internal-service-key");
+    const isInternalServiceCall = !!internalServiceKey && internalServiceKey === serviceKey;
+
+    if (!authHeader && !isInternalServiceCall) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const url = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
-    const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const admin = createClient(url, serviceKey);
     const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
 
-    const { data: { user }, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    let user: { id: string } | null = null;
+    if (!isInternalServiceCall) {
+      const { data, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !data.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      }
+      user = { id: data.user.id };
     }
 
     const masterSecret = Deno.env.get("STELLAR_SECRET_KEY")!;
-    const { issuer_id, amount, internal_id } = await req.json() as { issuer_id: string; amount: number; internal_id?: string };
+    const { issuer_id, amount, internal_id, transaction_id } = await req.json() as {
+      issuer_id: string;
+      amount: number;
+      internal_id?: string;
+      transaction_id?: string;
+    };
     if (!issuer_id || !(amount > 0)) {
       return new Response(JSON.stringify({ error: "issuer_id e amount obrigatórios" }), { status: 400, headers: corsHeaders });
     }
 
-    const { data: issuer } = await admin
-      .from("issuers")
-      .select("id")
-      .eq("id", issuer_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (!issuer) {
+    let authorized = false;
+    if (isInternalServiceCall) {
+      // Internal calls are only accepted when tied to an existing offramp order.
+      if (!internal_id || !transaction_id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+      }
+      const { data: order } = await admin
+        .from("offramp_orders")
+        .select("id, issuer_id, transaction_id, status")
+        .eq("id", internal_id)
+        .eq("transaction_id", transaction_id)
+        .maybeSingle();
+      authorized = !!order && order.issuer_id === issuer_id && ["pending", "burning"].includes(order.status);
+    } else {
+      const { data: issuer } = await admin
+        .from("issuers")
+        .select("id")
+        .eq("id", issuer_id)
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      authorized = !!issuer;
+    }
+
+    if (!authorized && !isInternalServiceCall) {
+      // Beneficiary path: allow burn only when tied to its own pending offramp order.
+      if (!internal_id || !transaction_id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+      }
+
+      const { data: order } = await admin
+        .from("offramp_orders")
+        .select("id, issuer_id, transaction_id, voucher_id, status")
+        .eq("id", internal_id)
+        .eq("transaction_id", transaction_id)
+        .maybeSingle();
+      if (!order || order.issuer_id !== issuer_id || !["pending", "burning"].includes(order.status)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+      }
+
+      const { data: voucher } = await admin
+        .from("vouchers")
+        .select("id, issuer_id, beneficiary_id")
+        .eq("id", order.voucher_id)
+        .maybeSingle();
+      if (!voucher || voucher.issuer_id !== issuer_id || voucher.beneficiary_id !== user!.id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+      }
+
+      authorized = true;
+    }
+
+    if (!authorized) {
       return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
     }
 

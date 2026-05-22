@@ -47,7 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeRole, setActiveRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<AuthContextType['profile']>(null);
-
   const fetchRolesAndProfile = async (userId: string) => {
     const [rolesRes, profileRes] = await Promise.all([
       supabase.from('user_roles').select('role').eq('user_id', userId),

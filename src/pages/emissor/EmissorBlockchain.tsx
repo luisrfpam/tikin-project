@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { EmissorLayout } from './EmissorLayout';
 import { Loader2, Search, ExternalLink, CheckCircle2, XCircle, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import { StellarHashLink, StellarBadge } from '@/components/StellarHashLink';
-import { STELLAR_PUBLIC_KEY, stellarExplorerUrl } from '@/lib/stellar';
+import { STELLAR_PUBLIC_KEY, registerOnStellar, type StellarEntity } from '@/lib/stellar';
 import { Input } from '@/components/ui/input';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -29,6 +29,7 @@ const ENTITY_LABEL: Record<string, string> = {
   issuer_funds: 'Orçamento',
   issuer_beneficiary: 'Beneficiário',
   charge: 'Cobrança',
+  offramp_order: 'Off-ramp',
 };
 
 const OP_LABEL: Record<string, string> = {
@@ -40,10 +41,14 @@ const OP_LABEL: Record<string, string> = {
   update_budget: 'Atualizar orçamento',
   'funds.set_budget': 'Definir orçamento mensal',
   link_beneficiary: 'Vincular beneficiário',
-  'beneficiary.link': 'Vinculação de beneficiário',
+  create_beneficiary: 'Cadastro de beneficiário',
+  charge: 'Gerar cobrança',
   create_charge: 'Gerar cobrança',
   'charge.create': 'Cobrança gerada pelo lojista',
   offramp_burn: 'Off-ramp: queima de TESOURO',
+  offramp_pix_paid: 'Off-ramp: PIX liquidado',
+  offramp_queued: 'Off-ramp: aguardando liquidação',
+  offramp_failed: 'Off-ramp: falha na liquidação',
   onramp_pix_settled: 'On-ramp: PIX liquidado',
 };
 
@@ -56,14 +61,28 @@ const OP_DESC: Record<string, string> = {
   update_budget: 'Emitente atualizou valores do orçamento mensal',
   'funds.set_budget': 'Emitente definiu/atualizou o orçamento mensal e os limites por categoria',
   link_beneficiary: 'Emitente vinculou um beneficiário para receber vouchers',
-  'beneficiary.link': 'Emitente vinculou um beneficiário ao seu programa para que possa receber vouchers (operação não-financeira)',
+  create_beneficiary: 'Cadastro de novo beneficiário na plataforma',
+  charge: 'Lojista gerou cobrança para receber via voucher',
   create_charge: 'Lojista gerou cobrança para receber via voucher',
   'charge.create': 'Lojista gerou uma cobrança para ser paga com voucher',
   offramp_burn: 'TESOURO devolvido ao emissor on-chain (off-ramp para PIX do lojista)',
+  offramp_pix_paid: 'Pagamento PIX do lojista confirmado no fluxo de off-ramp',
+  offramp_queued: 'Off-ramp iniciado e aguardando confirmação final de liquidação PIX',
+  offramp_failed: 'Tentativa de off-ramp falhou e requer nova tentativa de liquidação',
   onramp_pix_settled: 'PIX recebido foi convertido em TESOURO na carteira do emissor',
 };
 
 const PERIOD_OPTIONS = [5, 10, 15, 30, 45, 90];
+
+const RETRYABLE_ENTITIES: Set<string> = new Set([
+  'voucher',
+  'transaction',
+  'issuer_funds',
+  'issuer_beneficiary',
+  'voucher_category',
+  'charge',
+  'offramp_order',
+]);
 
 interface WalletInfo { publicKey: string; xlm: string; tesouro: string; }
 
@@ -90,6 +109,8 @@ export default function EmissorBlockchain() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [issuerId, setIssuerId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   useEffect(() => { setPage(1); }, [search, entityFilter, statusFilter, periodDays, customFrom, customTo, pageSize]);
 
@@ -98,7 +119,8 @@ export default function EmissorBlockchain() {
   async function load() {
     setLoading(true);
     const { data: iss } = await supabase.from('issuers').select('id').eq('user_id', user!.id).maybeSingle();
-    if (!iss) { setRows([]); setLoading(false); return; }
+    if (!iss) { setRows([]); setIssuerId(null); setLoading(false); return; }
+    setIssuerId(iss.id);
 
     // Ensure this issuer has its own Stellar wallet (creates + funds via friendbot on first call)
     let walletKey: string | null = null;
@@ -112,12 +134,52 @@ export default function EmissorBlockchain() {
       } catch (e) { console.error('ensure wallet', e); }
     }
 
-    const [{ data }, { data: ords }] = await Promise.all([
-      supabase.from('blockchain_transactions').select('*').eq('issuer_id', iss.id).order('created_at', { ascending: false }).limit(500),
-      supabase.from('onramp_orders').select('id, amount_brl, status, stellar_tx_hash, created_at, expires_at').eq('issuer_id', iss.id).order('created_at', { ascending: false }).limit(50),
-    ]);
-    setRows((data as any) || []);
-    setOnramps((ords as any) || []);
+    const historyRes = await supabase.functions.invoke('issuer-blockchain-history', { body: {} });
+    if (!historyRes.error && !(historyRes.data as any)?.error) {
+      setRows((((historyRes.data as any)?.rows || []) as Row[]));
+      setOnramps((((historyRes.data as any)?.onramps || []) as OnrampRow[]));
+    } else {
+      const [issuerTxRes, actorTxRes, onrampsRes] = await Promise.all([
+        supabase
+          .from('blockchain_transactions')
+          .select('*')
+          .eq('issuer_id', iss.id)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('blockchain_transactions')
+          .select('*')
+          .is('issuer_id', null)
+          .eq('actor_id', user!.id)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('onramp_orders')
+          .select('id, amount_brl, status, stellar_tx_hash, created_at, expires_at')
+          .eq('issuer_id', iss.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      if (issuerTxRes.error || onrampsRes.error) {
+        console.error('blockchain load error', {
+          historyError: historyRes.error || (historyRes.data as any)?.error,
+          issuerTxError: issuerTxRes.error,
+          actorTxError: actorTxRes.error,
+          onrampsError: onrampsRes.error,
+        });
+        toast.error('Falha ao carregar histórico blockchain');
+      }
+
+      const merged = new Map<string, Row>();
+      for (const row of ((issuerTxRes.data as any[]) || [])) merged.set(row.id, row as Row);
+      for (const row of ((actorTxRes.data as any[]) || [])) merged.set(row.id, row as Row);
+      const mergedRows = Array.from(merged.values()).sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+      setRows(mergedRows);
+      setOnramps((onrampsRes.data as any) || []);
+    }
 
     if (walletKey) {
       let xlm = '0', tesouro = '0';
@@ -136,6 +198,81 @@ export default function EmissorBlockchain() {
       setWallet(null);
     }
     setLoading(false);
+  }
+
+  async function retryStellarRow(row: Row) {
+    if (retryingId) return;
+    if (!issuerId) {
+      toast.error('Emissor não identificado para reenviar transação');
+      return;
+    }
+    if (!RETRYABLE_ENTITIES.has(row.entity_type)) {
+      toast.error(`Tipo de entidade não suportado para reenvio: ${row.entity_type}`);
+      return;
+    }
+    if (isRowAlreadyResolved(row)) {
+      toast.info('Esta transação já foi concluída com sucesso.');
+      return;
+    }
+
+    setRetryingId(row.id);
+    try {
+      if (row.entity_type === 'offramp_order') {
+        const { data: offramp, error: offrampErr } = await supabase
+          .from('offramp_orders')
+          .select('transaction_id')
+          .eq('id', row.internal_id)
+          .maybeSingle();
+
+        if (offrampErr || !offramp?.transaction_id) {
+          toast.error('Não foi possível localizar a transação do off-ramp para reenviar');
+          return;
+        }
+
+        const { data, error } = await supabase.functions.invoke('etherfuse-create-offramp', {
+          body: { transaction_id: offramp.transaction_id },
+        });
+
+        let msg = (data as any)?.error || error?.message;
+        const ctx = (error as any)?.context;
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const body = await ctx.json();
+            if (body?.error) msg = body.error;
+          } catch {
+            // keep parsed message fallback
+          }
+        }
+
+        if (error || (data as any)?.error) {
+          toast.error(`Falha no reenvio do off-ramp: ${msg || 'erro desconhecido'}`);
+          return;
+        }
+
+        toast.success('Reenvio do off-ramp concluído');
+        await load();
+        return;
+      }
+
+      const result = await registerOnStellar({
+        internal_id: row.internal_id,
+        entity_type: row.entity_type as StellarEntity,
+        operation: row.operation,
+        amount: row.amount ?? undefined,
+        issuer_id: issuerId,
+      });
+
+      if (result.success) {
+        toast.success(result.cached ? 'Registro já existente na Stellar' : 'Reenvio para Stellar concluído');
+        await load();
+      } else {
+        toast.error(`Falha no reenvio: ${result.error || 'erro desconhecido'}`);
+      }
+    } catch (e: any) {
+      toast.error(`Falha no reenvio: ${String(e?.message ?? e)}`);
+    } finally {
+      setRetryingId(null);
+    }
   }
 
   const now = Date.now();
@@ -164,6 +301,27 @@ export default function EmissorBlockchain() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const hasSuccessfulOfframpForInternalId = (internalId: string) => rows.some(x =>
+    x.entity_type === 'offramp_order'
+    && x.internal_id === internalId
+    && x.status === 'success'
+    && (x.operation === 'offramp_burn' || x.operation === 'offramp_pix_paid'),
+  );
+
+  const isRowAlreadyResolved = (row: Row) => {
+    if (row.entity_type === 'offramp_order') {
+      return hasSuccessfulOfframpForInternalId(row.internal_id);
+    }
+
+    return rows.some(x =>
+      x.id !== row.id
+      && x.status === 'success'
+      && x.internal_id === row.internal_id
+      && x.entity_type === row.entity_type
+      && x.operation === row.operation,
+    );
+  };
 
   if (loading) return <div className="min-h-screen bg-tikin-navy flex items-center justify-center"><Loader2 className="text-tikin-orange animate-spin" /></div>;
 
@@ -332,8 +490,25 @@ export default function EmissorBlockchain() {
                   <td className="px-5 py-3"><StellarHashLink hash={r.stellar_tx_hash} /></td>
                   <td className="px-5 py-3">
                     {r.status === 'success' && <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">SUCESSO</span>}
-                    {r.status === 'failed' && <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold" title={r.error || ''}>FALHA</span>}
+                    {r.status === 'failed' && (
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold" title={r.error || ''}>FALHA</span>
+                        {isRowAlreadyResolved(r) ? (
+                          <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-300 text-[10px] font-bold">JÁ RESOLVIDO</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => retryStellarRow(r)}
+                            disabled={!!retryingId}
+                            className="px-2 py-0.5 rounded-md border border-tikin-orange/40 bg-tikin-orange/10 text-tikin-orange text-[10px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {retryingId === r.id ? 'REENVIANDO…' : 'REENVIAR'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {r.status === 'pending' && <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>}
+                    {r.status === 'superseded' && <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/60 text-[10px] font-bold">SUPERSEDED</span>}
                   </td>
                 </tr>
               ))}

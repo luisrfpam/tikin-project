@@ -88,6 +88,20 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const cfg = ROLE_CONFIG[role];
 
+  useEffect(() => {
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const queryParams = new URLSearchParams(window.location.search);
+
+    const hashType = (hashParams.get('type') || '').toLowerCase();
+    const hasSignupTokens = Boolean(hashParams.get('access_token') && hashParams.get('refresh_token') && hashType === 'signup');
+    const hasAuthCode = Boolean(queryParams.get('code'));
+
+    if (hasSignupTokens || hasAuthCode) {
+      navigate('/ativar-cadastro' + window.location.search + window.location.hash, { replace: true });
+    }
+  }, [navigate]);
+
   const attemptKey = `${role}:${identifier.trim().toLowerCase()}`;
 
   // Re-check lockout when identifier/role changes
@@ -164,8 +178,22 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('email not confirmed') || msg.includes('email_not_confirmed')) {
+        toast.error('Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada e spam.');
+        return;
+      }
       registerFailure();
     } else {
+      if (role === 'emissor') {
+        const { data: enabledData, error: enabledError } = await supabase.rpc('is_current_issuer_enabled');
+        if (enabledError || !enabledData) {
+          await supabase.auth.signOut();
+          toast.error('Seu cadastro de emitente está em análise pela TIKiN. Aguarde a aprovação para acessar.');
+          return;
+        }
+      }
+
       clearAttempts(attemptKey);
       navigate('/');
     }
@@ -265,10 +293,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            <div className="flex justify-between items-center text-sm">
-              <label className="flex items-center gap-2 text-tikin-navy/60 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 accent-tikin-navy" /> Manter conectado
-              </label>
+            <div className="flex justify-end items-center text-sm">
               <Link to="/recuperar-senha" className="text-tikin-navy font-extrabold underline">Recuperar senha</Link>
             </div>
 

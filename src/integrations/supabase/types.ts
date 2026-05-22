@@ -415,6 +415,7 @@ export type Database = {
           created_at: string
           fund_balance: number
           id: string
+          is_enabled: boolean
           razao_social: string | null
           responsible_name: string | null
           responsible_role: string | null
@@ -428,6 +429,7 @@ export type Database = {
           created_at?: string
           fund_balance?: number
           id?: string
+          is_enabled?: boolean
           razao_social?: string | null
           responsible_name?: string | null
           responsible_role?: string | null
@@ -441,6 +443,7 @@ export type Database = {
           created_at?: string
           fund_balance?: number
           id?: string
+          is_enabled?: boolean
           razao_social?: string | null
           responsible_name?: string | null
           responsible_role?: string | null
@@ -849,6 +852,132 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_list_issuers: {
+        Args: { _admin_email: string; _admin_password: string }
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }[]
+      }
+      admin_set_issuer_enabled: {
+        Args: {
+          _admin_email: string
+          _admin_password: string
+          _is_enabled: boolean
+          _issuer_id: string
+        }
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          fund_balance: number
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }
+      }
+      admin_update_issuer: {
+        Args: {
+          _admin_email: string
+          _admin_password: string
+          _cnpj?: string
+          _company_name?: string
+          _corporate_email?: string
+          _issuer_id: string
+          _razao_social?: string
+          _responsible_name?: string
+          _responsible_role?: string
+        }
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          fund_balance: number
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }
+      }
+      admin_list_issuers_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }[]
+      }
+      admin_set_issuer_enabled_secure: {
+        Args: {
+          _is_enabled: boolean
+          _issuer_id: string
+        }
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          fund_balance: number
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }
+      }
+      admin_update_issuer_secure: {
+        Args: {
+          _cnpj?: string
+          _company_name?: string
+          _corporate_email?: string
+          _issuer_id: string
+          _razao_social?: string
+          _responsible_name?: string
+          _responsible_role?: string
+        }
+        Returns: {
+          cnpj: string
+          company_name: string
+          corporate_email: string | null
+          created_at: string
+          fund_balance: number
+          id: string
+          is_enabled: boolean
+          razao_social: string | null
+          responsible_name: string | null
+          responsible_role: string | null
+          updated_at: string
+          user_id: string
+        }
+      }
       consume_issuer_funds:
         | { Args: { _issuer_id: string; _value: number }; Returns: undefined }
         | {
@@ -877,6 +1006,18 @@ export type Database = {
       }
       is_issuer_owner: {
         Args: { _issuer_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_current_issuer_enabled: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_tikin_admin_credentials: {
+        Args: { _admin_email: string; _admin_password: string }
+        Returns: boolean
+      }
+      is_tikin_admin: {
+        Args: Record<PropertyKey, never>
         Returns: boolean
       }
       lookup_beneficiary_name_by_cpf: {

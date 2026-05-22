@@ -13,8 +13,11 @@ export default function RecuperarSenha() {
     e.preventDefault();
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/redefinir-senha`,
+    const { error } = await supabase.functions.invoke('password-recovery-random', {
+      body: {
+        email: email.trim().toLowerCase(),
+        redirectTo: `${window.location.origin}/redefinir-senha`,
+      },
     });
     setLoading(false);
     if (error) {
@@ -40,7 +43,8 @@ export default function RecuperarSenha() {
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-tikin-navy/10 flex items-center justify-center text-tikin-navy text-3xl">✉</div>
               <h2 className="font-heading text-2xl font-black text-tikin-navy mb-2">EMAIL ENVIADO</h2>
               <p className="text-tikin-navy/70 mb-6">
-                Enviamos um link para <strong>{email}</strong> para você criar uma nova senha de acesso. Verifique sua caixa de entrada.
+                Se o e-mail <strong>{email}</strong> estiver vinculado a um perfil beneficiário, lojista ou emissor,
+                enviaremos um link para redefinição de senha. Verifique sua caixa de entrada.
               </p>
               <Link to="/login" className="inline-block py-3 px-6 rounded-xl bg-tikin-navy text-white font-heading font-extrabold text-sm">
                 VOLTAR AO LOGIN

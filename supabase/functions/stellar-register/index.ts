@@ -81,15 +81,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Idempotency
+    const masterSecret = Deno.env.get('STELLAR_SECRET_KEY');
+    if (!masterSecret) throw new Error('STELLAR_SECRET_KEY not configured');
+
+    // Payload fingerprint: preserves retry-idempotency for the exact same event
+    // while allowing legitimate new updates on the same internal entity.
+    const memoPayload = `${body.internal_id}|${body.operation}|${body.amount ?? 0}`;
+    const memoBytes = await sha256Hex(memoPayload);
+    const memoHex = Array.from(memoBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    // Idempotency (exact same event payload only)
     const { data: existing } = await supabase
       .from('blockchain_transactions')
-      .select('id, stellar_tx_hash, stellar_ledger, status')
+      .select('id, stellar_tx_hash, stellar_ledger, status, issuer_id')
       .eq('internal_id', body.internal_id)
       .eq('operation', body.operation)
+      .eq('memo_hash', memoHex)
       .eq('status', 'success')
       .maybeSingle();
     if (existing?.stellar_tx_hash) {
+      // Preserve idempotency while enriching historical rows that were created
+      // without issuer scope (e.g. merchant-first charge flow).
+      if (body.issuer_id && !existing.issuer_id) {
+        await supabase
+          .from('blockchain_transactions')
+          .update({ issuer_id: body.issuer_id })
+          .eq('id', existing.id);
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -100,13 +119,6 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const masterSecret = Deno.env.get('STELLAR_SECRET_KEY');
-    if (!masterSecret) throw new Error('STELLAR_SECRET_KEY not configured');
-
-    const memoPayload = `${body.internal_id}|${body.amount ?? 0}`;
-    const memoBytes = await sha256Hex(memoPayload);
-    const memoHex = Array.from(memoBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 
     // Resolve signing keypair: prefer the ISSUER's own Stellar wallet when issuer_id is provided.
     // The master keypair is only a centralizer fallback for system events without a known issuer.

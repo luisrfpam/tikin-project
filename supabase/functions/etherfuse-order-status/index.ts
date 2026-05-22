@@ -27,9 +27,6 @@ Deno.serve(async (req) => {
     const orderId = body.order_id as string;
     const force = body.force as ("pay" | "expire" | undefined);
     if (!orderId) return new Response(JSON.stringify({ error: "order_id obrigatório" }), { status: 400, headers: corsHeaders });
-    if (force) {
-      return new Response(JSON.stringify({ error: "force não permitido" }), { status: 403, headers: corsHeaders });
-    }
 
     const { data: order } = await admin.from("onramp_orders").select("*").eq("id", orderId).maybeSingle();
     if (!order) return new Response(JSON.stringify({ error: "Order não encontrada" }), { status: 404, headers: corsHeaders });
@@ -42,21 +39,33 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify(order), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Try real Etherfuse status
+    // Allow explicit simulation only for sandbox/demo orders owned by the issuer.
+    const isSandboxOrder = !!order.etherfuse_order_id?.startsWith("sandbox_");
     let newStatus = order.status;
-    try {
-      if (order.etherfuse_order_id && !order.etherfuse_order_id.startsWith("sandbox_")) {
-        const r = await fetch(`${ETHERFUSE_BASE}/v1/ramps/onramp/${order.etherfuse_order_id}`, {
-          headers: { "Authorization": `Bearer ${etherfuseKey}` },
-        });
-        if (r.ok) {
-          const j = await r.json();
-          const s = (j.status || "").toLowerCase();
-          if (["paid", "completed", "settled"].includes(s)) newStatus = "paid";
-          else if (["expired", "canceled", "failed"].includes(s)) newStatus = s === "failed" ? "failed" : "expired";
-        }
+    if (force) {
+      if (!isSandboxOrder) {
+        return new Response(JSON.stringify({ error: "Simulação permitida apenas em ordens sandbox" }), { status: 403, headers: corsHeaders });
       }
-    } catch { /* ignore */ }
+      if (order.status !== "pending") {
+        return new Response(JSON.stringify({ error: "Apenas ordens pendentes podem ser simuladas" }), { status: 409, headers: corsHeaders });
+      }
+      newStatus = force === "pay" ? "paid" : "expired";
+    } else {
+      // Try real Etherfuse status
+      try {
+        if (order.etherfuse_order_id && !isSandboxOrder) {
+          const r = await fetch(`${ETHERFUSE_BASE}/v1/ramps/onramp/${order.etherfuse_order_id}`, {
+            headers: { "Authorization": `Bearer ${etherfuseKey}` },
+          });
+          if (r.ok) {
+            const j = await r.json();
+            const s = (j.status || "").toLowerCase();
+            if (["paid", "completed", "settled"].includes(s)) newStatus = "paid";
+            else if (["expired", "canceled", "failed"].includes(s)) newStatus = s === "failed" ? "failed" : "expired";
+          }
+        }
+      } catch { /* ignore */ }
+    }
 
     // Expire by time
     if (newStatus === "pending" && order.expires_at && new Date(order.expires_at).getTime() < Date.now()) {

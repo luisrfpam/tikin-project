@@ -12,8 +12,12 @@ import RegisterPage from "./pages/RegisterPage";
 import SolicitarOnboarding from "./pages/SolicitarOnboarding";
 import RecuperarSenha from "./pages/RecuperarSenha";
 import RedefinirSenha from "./pages/RedefinirSenha";
+import AtivarCadastro from "./pages/AtivarCadastro";
+import EmissorAguardandoAprovacao from "./pages/EmissorAguardandoAprovacao";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
+import AdminLoginPage from "./pages/admin/AdminLoginPage";
+import AdminEmittersPage from "./pages/admin/AdminEmittersPage";
 
 import Landing from "./pages/site/Landing";
 import HowItWorks from "./pages/site/HowItWorks";
@@ -71,6 +75,12 @@ const App = () => (
             <Route path="/solicitar-onboarding" element={<SolicitarOnboarding />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
             <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+            <Route path="/ativar-cadastro" element={<AtivarCadastro />} />
+            <Route path="/emissor/aguardando-aprovacao" element={<EmissorAguardandoAprovacao />} />
+
+            {/* Área administrativa oculta por URL */}
+            <Route path="/tikin-admin/login" element={<AdminLoginPage />} />
+            <Route path="/tikin-admin/emissores" element={<AdminEmittersPage />} />
 
             {/* Marketing site */}
             <Route path="/como-funciona" element={<HowItWorks />} />

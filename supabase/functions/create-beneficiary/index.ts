@@ -63,14 +63,15 @@ Deno.serve(async (req) => {
     }
 
     // Link
-    const { error: linkErr } = await admin.from("issuer_beneficiaries").upsert(
+    const { data: linkRow, error: linkErr } = await admin.from("issuer_beneficiaries").upsert(
       { issuer_id: issuer.id, beneficiary_id: beneficiaryId, status: "active", activated_by: user.id },
       { onConflict: "issuer_id,beneficiary_id" }
-    );
+    ).select("id").single();
     if (linkErr) return new Response(JSON.stringify({ error: linkErr.message }), { status: 400, headers: corsHeaders });
 
     return new Response(JSON.stringify({
       beneficiary_id: beneficiaryId,
+      issuer_beneficiary_id: linkRow?.id ?? null,
       temp_password: tempPassword,
       created: !existingByCpf,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

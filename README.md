@@ -77,6 +77,10 @@ A TIKIN utiliza a **Stellar Testnet** para registrar todas as operações críti
 | `link_beneficiary` | Vinculação de beneficiário ao fundo da empresa |
 | `create_beneficiary` | Cadastro de novo beneficiário na plataforma |
 | `charge` | Geração de cobrança pelo lojista |
+| `onramp_pix_settled` | PIX de entrada liquidado e convertido em TESOURO na carteira do emissor |
+| `offramp_burn` | Queima (burn) de TESOURO para iniciar liquidação PIX ao lojista |
+| `offramp_pix_paid` | Liquidação PIX concluída para o lojista no fluxo de off-ramp |
+| `offramp_failed` | Falha no fluxo de off-ramp (permite diagnóstico e reprocessamento) |
 
 ### Como funciona:
 

@@ -27,6 +27,7 @@ export default function LojistaReceber() {
   const [waiting, setWaiting] = useState(false);
   const [chargeId, setChargeId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [inferredIssuerId, setInferredIssuerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -44,6 +45,24 @@ export default function LojistaReceber() {
           .eq('is_default', true);
         setHasDefaultPix((count ?? 0) > 0);
         setCheckingPixConfig(false);
+
+        // Try to infer a single issuer context for this merchant from prior paid transactions.
+        // If there is exactly one issuer, charge registration can already appear in issuer history at QR creation.
+        const { data: txRows } = await supabase
+          .from('transactions')
+          .select('vouchers(issuer_id)')
+          .eq('establishment_id', data.id)
+          .eq('status', 'confirmed')
+          .order('created_at', { ascending: false })
+          .limit(200);
+
+        const issuerIds = new Set<string>();
+        for (const row of (txRows as any[]) ?? []) {
+          const issuerId = row?.vouchers?.issuer_id;
+          if (issuerId) issuerIds.add(issuerId);
+          if (issuerIds.size > 1) break;
+        }
+        setInferredIssuerId(issuerIds.size === 1 ? Array.from(issuerIds)[0] : null);
       });
   }, [user]);
 
@@ -82,8 +101,15 @@ export default function LojistaReceber() {
     if (error || !data) return toast.error(error?.message || 'Erro ao gerar cobrança');
     setChargeId(data.id);
     setPhase('qr');
-    // Register charge on Stellar Testnet
-    registerOnStellar({ internal_id: data.id, entity_type: 'charge', operation: 'create_charge', amount: v })
+    // Register charge on Stellar Testnet. If issuer context is unambiguous, include it now
+    // so the event is immediately visible on issuer blockchain history.
+    registerOnStellar({
+      internal_id: data.id,
+      entity_type: 'charge',
+      operation: 'charge',
+      amount: v,
+      issuer_id: inferredIssuerId || undefined,
+    })
       .then(r => { if (r.success && r.hash) toast.success(`Cobrança registrada na Stellar (${r.hash.slice(0, 8)}…)`); });
   };
 

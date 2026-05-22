@@ -46,11 +46,20 @@ Deno.serve(async (req) => {
 
     // Ensure link exists & active
     const { data: link } = await admin.from("issuer_beneficiaries")
-      .select("status").eq("issuer_id", issuer.id).eq("beneficiary_id", benefProfile.id).maybeSingle();
+      .select("id,status").eq("issuer_id", issuer.id).eq("beneficiary_id", benefProfile.id).maybeSingle();
+
+    let issuerBeneficiaryId: string | null = link?.id ?? null;
+    let linkCreated = false;
+
     if (!link) {
-      await admin.from("issuer_beneficiaries").insert({
+      const { data: insertedLink, error: insertLinkErr } = await admin.from("issuer_beneficiaries").insert({
         issuer_id: issuer.id, beneficiary_id: benefProfile.id, status: "active", activated_by: user.id,
-      });
+      }).select("id").single();
+      if (insertLinkErr || !insertedLink?.id) {
+        return new Response(JSON.stringify({ error: insertLinkErr?.message || "Falha ao vincular beneficiário ao emissor" }), { status: 400, headers: corsHeaders });
+      }
+      issuerBeneficiaryId = insertedLink.id;
+      linkCreated = true;
     } else if (link.status !== "active") {
       return new Response(JSON.stringify({ error: "Beneficiário inativo para este emissor" }), { status: 400, headers: corsHeaders });
     }
@@ -72,7 +81,11 @@ Deno.serve(async (req) => {
     }]).select().single();
     if (vErr) return new Response(JSON.stringify({ error: vErr.message }), { status: 400, headers: corsHeaders });
 
-    return new Response(JSON.stringify({ voucher }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({
+      voucher,
+      issuer_beneficiary_id: issuerBeneficiaryId,
+      link_created: linkCreated,
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: corsHeaders });
   }

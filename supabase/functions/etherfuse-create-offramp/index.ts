@@ -35,9 +35,9 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "transaction_id obrigatório" }), { status: 400, headers: corsHeaders });
     }
 
-    // Idempotency
+    // Idempotency: return existing order unless it's failed (failed orders are retryable).
     const { data: existing } = await admin.from("offramp_orders").select("*").eq("transaction_id", transaction_id).maybeSingle();
-    if (existing) {
+    if (existing && existing.status !== "failed") {
       return new Response(JSON.stringify(existing), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -52,7 +52,20 @@ Deno.serve(async (req) => {
       .eq("id", tx.voucher_id)
       .single();
     if (!voucher) return new Response(JSON.stringify({ error: "Voucher não encontrado" }), { status: 404, headers: corsHeaders });
-    if (!voucher.beneficiary_id || voucher.beneficiary_id !== user.id) {
+
+    const isBeneficiary = !!voucher.beneficiary_id && voucher.beneficiary_id === user.id;
+    let isIssuerOwner = false;
+    if (!isBeneficiary) {
+      const { data: issuerOwner } = await admin
+        .from("issuers")
+        .select("id")
+        .eq("id", voucher.issuer_id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      isIssuerOwner = !!issuerOwner;
+    }
+
+    if (!isBeneficiary && !isIssuerOwner) {
       return new Response(JSON.stringify({ error: "Acesso negado" }), { status: 403, headers: corsHeaders });
     }
 
@@ -62,19 +75,34 @@ Deno.serve(async (req) => {
       .eq("is_default", true)
       .maybeSingle();
 
-    // Create offramp order
-    const { data: order, error: oErr } = await admin.from("offramp_orders").insert({
-      transaction_id: tx.id,
-      establishment_id: tx.establishment_id,
-      issuer_id: voucher.issuer_id,
-      voucher_id: voucher.id,
-      amount_brl: tx.amount,
-      pix_key_value: pixKey?.key_value ?? null,
-      pix_key_type: pixKey?.key_type ?? null,
-      status: pixKey ? "pending" : "failed",
-      error: pixKey ? null : "Lojista não possui chave PIX cadastrada",
-    }).select().single();
-    if (oErr || !order) return new Response(JSON.stringify({ error: oErr?.message || "Falha ao criar ordem" }), { status: 500, headers: corsHeaders });
+    // Create or reuse failed offramp order
+    let order = existing as any;
+    if (!order) {
+      const { data: created, error: oErr } = await admin.from("offramp_orders").insert({
+        transaction_id: tx.id,
+        establishment_id: tx.establishment_id,
+        issuer_id: voucher.issuer_id,
+        voucher_id: voucher.id,
+        amount_brl: tx.amount,
+        pix_key_value: pixKey?.key_value ?? null,
+        pix_key_type: pixKey?.key_type ?? null,
+        status: pixKey ? "pending" : "failed",
+        error: pixKey ? null : "Lojista não possui chave PIX cadastrada",
+      }).select().single();
+      if (oErr || !created) return new Response(JSON.stringify({ error: oErr?.message || "Falha ao criar ordem" }), { status: 500, headers: corsHeaders });
+      order = created;
+    } else {
+      // Retry path: refresh mutable fields and clear stale error.
+      const { data: reused, error: rErr } = await admin.from("offramp_orders").update({
+        amount_brl: tx.amount,
+        pix_key_value: pixKey?.key_value ?? null,
+        pix_key_type: pixKey?.key_type ?? null,
+        status: pixKey ? "pending" : "failed",
+        error: pixKey ? null : "Lojista não possui chave PIX cadastrada",
+      }).eq("id", order.id).select().single();
+      if (rErr || !reused) return new Response(JSON.stringify({ error: rErr?.message || "Falha ao preparar retry da ordem" }), { status: 500, headers: corsHeaders });
+      order = reused;
+    }
 
     if (!pixKey) {
       return new Response(JSON.stringify(order), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -90,11 +118,13 @@ Deno.serve(async (req) => {
           "Authorization": auth,
           "Content-Type": "application/json",
           apikey: anon,
+          "x-internal-service-key": service,
         },
         body: JSON.stringify({
           issuer_id: voucher.issuer_id,
           amount: Number(tx.amount),
           internal_id: order.id,
+          transaction_id: tx.id,
         }),
       });
       const burnJson = await burnRes.json();
@@ -147,6 +177,29 @@ Deno.serve(async (req) => {
       status: paid ? "paid" : "burned",
       pix_paid_at: paid ? new Date().toISOString() : null,
     }).eq("id", order.id).select().single();
+
+    // Keep blockchain history updated with off-ramp settlement lifecycle.
+    await admin.from("blockchain_transactions").insert({
+      operation: paid ? "offramp_pix_paid" : "offramp_queued",
+      amount: Number(tx.amount),
+      stellar_tx_hash: burnHash,
+      stellar_ledger: null,
+      status: paid ? "success" : "pending",
+      issuer_id: voucher.issuer_id,
+      internal_id: order.id,
+      entity_type: "offramp_order",
+      error: null,
+    });
+
+    // If this off-ramp eventually succeeded, supersede stale failed attempts for the same order.
+    if (paid) {
+      await admin
+        .from("blockchain_transactions")
+        .update({ status: "superseded" })
+        .eq("internal_id", order.id)
+        .eq("entity_type", "offramp_order")
+        .eq("status", "failed");
+    }
 
     return new Response(JSON.stringify(finalOrder), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {

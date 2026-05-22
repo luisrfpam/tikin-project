@@ -174,6 +174,23 @@ export default function UsarVoucher() {
       if (error) throw error;
 
       const txIds = ((data as { transaction_ids?: string[] } | null)?.transaction_ids) ?? [];
+
+      // Tie charge registration to the issuer context once payment is confirmed,
+      // so it appears in issuer blockchain history as well.
+      const firstIssuerId = slices[0]?.voucher?.issuer_id;
+      if (charge?.id && firstIssuerId) {
+        const r = await registerOnStellar({
+          internal_id: charge.id,
+          entity_type: 'charge',
+          operation: 'charge',
+          amount: valueNumber,
+          issuer_id: firstIssuerId,
+        });
+        if (r.success && r.hash) {
+          toast.success(`Cobrança registrada na Stellar (${r.hash.slice(0, 8)}…)`);
+        }
+      }
+
       for (let i = 0; i < txIds.length; i++) {
         const txId = txIds[i];
         const s = slices[i];

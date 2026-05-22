@@ -24,9 +24,9 @@ type EntityType = 'voucher' | 'transaction' | 'charge' | 'issuer_funds' | 'issue
 const ENTITIES: Record<EntityType, { table: string; column: string; amountCol?: string; issuerCol?: string; op: string }> = {
   voucher: { table: 'vouchers', column: 'stellar_tx_hash', amountCol: 'value', issuerCol: 'issuer_id', op: 'voucher.create' },
   transaction: { table: 'transactions', column: 'stellar_tx_hash', amountCol: 'amount', op: 'voucher.pay' },
-  charge: { table: 'charges', column: 'stellar_tx_hash', amountCol: 'amount', op: 'charge.create' },
+  charge: { table: 'charges', column: 'stellar_tx_hash', amountCol: 'amount', op: 'charge' },
   issuer_funds: { table: 'issuer_funds', column: 'last_stellar_tx_hash', amountCol: 'monthly_budget', issuerCol: 'issuer_id', op: 'funds.set_budget' },
-  issuer_beneficiary: { table: 'issuer_beneficiaries', column: 'stellar_tx_hash', issuerCol: 'issuer_id', op: 'beneficiary.link' },
+  issuer_beneficiary: { table: 'issuer_beneficiaries', column: 'stellar_tx_hash', issuerCol: 'issuer_id', op: 'link_beneficiary' },
 };
 
 async function sha256Hex(input: string): Promise<string> {

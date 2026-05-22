@@ -19,7 +19,14 @@ interface BenefRow { id: string; name: string; cpf_masked: string; status: 'acti
 interface LinkRow { beneficiary_id: string; status: 'active' | 'inactive'; }
 interface Voucher { id: string; beneficiary_id: string | null; value: number; remaining_value: number; status: string; rules: any; expiration_date: string; created_at: string; }
 interface Tx { id: string; amount: number; created_at: string; voucher_category: string | null; tx_type: string; status: string; voucher_id: string; }
-interface FundRow { id: string; month: string; monthly_budget: number; allocated: number; }
+interface FundRow {
+  id: string;
+  month: string;
+  monthly_budget: number;
+  allocated: number;
+  category_caps?: Record<string, number> | null;
+  category_allocated?: Record<string, number> | null;
+}
 
 const PERIODS = [5, 10, 15, 30, 90];
 
@@ -189,8 +196,18 @@ export default function EmissorBeneficiarios() {
         </div>
       </div>
 
-      {showNew && <NovoBeneficiarioModal onClose={() => setShowNew(false)} onDone={() => { setShowNew(false); loadAll(); }} />}
-      {showAddSaldo && <AddSaldoModal issuerId={issuer?.id || ''} fundDisponivel={fundDisponivel} prefill={typeof showAddSaldo === 'object' ? showAddSaldo : null} onClose={() => setShowAddSaldo(false)} onDone={() => { setShowAddSaldo(false); loadAll(); }} />}
+      {showNew && <NovoBeneficiarioModal issuerId={issuer?.id || ''} onClose={() => setShowNew(false)} onDone={() => { setShowNew(false); loadAll(); }} />}
+      {showAddSaldo && (
+        <AddSaldoModal
+          issuerId={issuer?.id || ''}
+          fundDisponivel={fundDisponivel}
+          fundCategoryCaps={fund?.category_caps || null}
+          fundCategoryAllocated={fund?.category_allocated || null}
+          prefill={typeof showAddSaldo === 'object' ? showAddSaldo : null}
+          onClose={() => setShowAddSaldo(false)}
+          onDone={() => { setShowAddSaldo(false); loadAll(); }}
+        />
+      )}
       {extratoOf && issuer && <ExtratoModal issuerId={issuer.id} beneficiary={extratoOf} onClose={() => setExtratoOf(null)} />}
       {saldoOf && <SaldoDetailModal beneficiary={saldoOf} vouchers={vouchers.filter(v => v.beneficiary_id === saldoOf.id && v.status !== 'expired')} onClose={() => setSaldoOf(null)} />}
     </EmissorLayout>
@@ -223,7 +240,7 @@ function Modal({ children, onClose, title, subtitle }: { children: React.ReactNo
   );
 }
 
-function NovoBeneficiarioModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function NovoBeneficiarioModal({ issuerId, onClose, onDone }: { issuerId: string; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState(''); const [cpf, setCpf] = useState(''); const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [tempPwd, setTempPwd] = useState<string | null>(null);
@@ -237,11 +254,26 @@ function NovoBeneficiarioModal({ onClose, onDone }: { onClose: () => void; onDon
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('create-beneficiary', { body: { name: name.trim(), cpf: onlyDigits(cpf), email: email.trim().toLowerCase() } });
     if (error || (data as any)?.error) { setLoading(false); toast.error((data as any)?.error || error?.message || 'Erro'); return; }
-    // Register on Stellar
-    const benefId = (data as any).beneficiary_id;
-    if (benefId) {
-      const r = await registerOnStellar({ internal_id: benefId, entity_type: 'issuer_beneficiary', operation: 'link_beneficiary' });
-      if (r.success && r.hash) toast.success(`Beneficiário registrado na Stellar (${r.hash.slice(0, 8)}…)`);
+    // Register beneficiary lifecycle on Stellar using issuer_beneficiaries row id.
+    const issuerBeneficiaryId = (data as any).issuer_beneficiary_id as string | null;
+    const wasCreated = Boolean((data as any).created);
+    if (issuerBeneficiaryId) {
+      const ops = wasCreated ? ['create_beneficiary', 'link_beneficiary'] : ['link_beneficiary'];
+      let okCount = 0;
+      for (const op of ops) {
+        const r = await registerOnStellar({
+          internal_id: issuerBeneficiaryId,
+          entity_type: 'issuer_beneficiary',
+          operation: op,
+          issuer_id: issuerId || undefined,
+        });
+        if (r.success) okCount += 1;
+      }
+      if (okCount > 0) {
+        toast.success(wasCreated
+          ? 'Cadastro e vínculo do beneficiário registrados na Stellar'
+          : 'Vínculo do beneficiário registrado na Stellar');
+      }
     }
     setLoading(false);
     setTempPwd((data as any).temp_password || null);
@@ -294,7 +326,23 @@ function NovoBeneficiarioModal({ onClose, onDone }: { onClose: () => void; onDon
   );
 }
 
-function AddSaldoModal({ issuerId, fundDisponivel, prefill, onClose, onDone }: { issuerId: string; fundDisponivel: number; prefill?: { id: string; name: string } | null; onClose: () => void; onDone: () => void }) {
+function AddSaldoModal({
+  issuerId,
+  fundDisponivel,
+  fundCategoryCaps,
+  fundCategoryAllocated,
+  prefill,
+  onClose,
+  onDone,
+}: {
+  issuerId: string;
+  fundDisponivel: number;
+  fundCategoryCaps?: Record<string, number> | null;
+  fundCategoryAllocated?: Record<string, number> | null;
+  prefill?: { id: string; name: string } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const cats = useCategories();
   const [cpf, setCpf] = useState(''); const [value, setValue] = useState(''); const [category, setCategory] = useState('alimentacao'); const [expDate, setExpDate] = useState('');
   const [loading, setLoading] = useState(false); const [done, setDone] = useState(false);
@@ -337,11 +385,51 @@ function AddSaldoModal({ issuerId, fundDisponivel, prefill, onClose, onDone }: {
     const val = parseBRLInput(value);
     if (!(val > 0)) return toast.error('Valor inválido');
     if (val > fundDisponivel) return toast.error('Valor maior que o disponível no mês');
+
+    const catCap = Number(fundCategoryCaps?.[category] || 0);
+    const catAllocated = Number(fundCategoryAllocated?.[category] || 0);
+    const catRemaining = Math.max(0, catCap - catAllocated);
+    if (catCap > 0 && val > catRemaining) {
+      return toast.error(`Limite da categoria excedido. Disponível em ${categoryLabel(category, cats)}: R$ ${fmtBRL(catRemaining)}`);
+    }
+
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('add-voucher-to-beneficiary', {
       body: { cpf: onlyDigits(cpf), value: val, category, expiration_date: expDate },
     });
-    if (error || (data as any)?.error) { setLoading(false); toast.error((data as any)?.error || error?.message || 'Erro'); return; }
+    if (error || (data as any)?.error) {
+      let message = (data as any)?.error || error?.message || 'Erro';
+      const ctx = (error as any)?.context;
+      if (ctx && typeof ctx.json === 'function') {
+        try {
+          const body = await ctx.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // keep default message when response body can't be parsed
+        }
+      }
+      setLoading(false);
+      toast.error(message);
+      return;
+    }
+
+    // If this flow created (or reused) issuer-beneficiary association,
+    // ensure the non-financial link event is anchored on Stellar.
+    const issuerBeneficiaryId = (data as any)?.issuer_beneficiary_id as string | null;
+    if (issuerBeneficiaryId) {
+      const rLink = await registerOnStellar({
+        internal_id: issuerBeneficiaryId,
+        entity_type: 'issuer_beneficiary',
+        operation: 'link_beneficiary',
+        issuer_id: issuerId,
+      });
+      if (rLink.success && rLink.hash && !rLink.cached) {
+        toast.success(`Vínculo do beneficiário registrado na Stellar (${rLink.hash.slice(0, 8)}…)`);
+      } else if (!rLink.success && rLink.error) {
+        toast.warning('Stellar (vínculo): ' + rLink.error);
+      }
+    }
+
     // Register voucher on Stellar
     const voucher = (data as any).voucher;
     if (voucher?.id) {

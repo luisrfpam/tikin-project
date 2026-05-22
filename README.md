@@ -68,26 +68,31 @@ A TIKIN utiliza a **Stellar Testnet** para registrar todas as operações críti
 
 ### O que é registrado na blockchain:
 
-| Operação | Descrição |
-|----------|-----------|
-| `create_voucher` | Criação de um novo voucher de benefício |
-| `pay_voucher` | Pagamento realizado pelo beneficiário |
-| `allocate_budget` | Alocação de orçamento mensal pelo emitente |
-| `update_budget` | Edição de orçamento ou categorias existentes |
-| `link_beneficiary` | Vinculação de beneficiário ao fundo da empresa |
-| `create_beneficiary` | Cadastro de novo beneficiário na plataforma |
-| `charge` | Geração de cobrança pelo lojista |
-| `onramp_pix_settled` | PIX de entrada liquidado e convertido em TESOURO na carteira do emissor |
-| `offramp_burn` | Queima (burn) de TESOURO para iniciar liquidação PIX ao lojista |
-| `offramp_pix_paid` | Liquidação PIX concluída para o lojista no fluxo de off-ramp |
-| `offramp_failed` | Falha no fluxo de off-ramp (permite diagnóstico e reprocessamento) |
+| Operação | Descrição | Payload para hash/memo |
+|----------|-----------|-------------------------|
+| `create_voucher` | Emissão de voucher com saldo para beneficiário | `internal_id=voucher.id`, `operation=create_voucher`, `amount=valor do voucher` (disparada em **ADICIONAR SALDO (CPF)**) |
+| `pay_voucher` | Pagamento realizado pelo beneficiário | `internal_id=transaction.id`, `operation=pay_voucher`, `amount=valor da fatia paga` |
+| `allocate_budget` | Alocação de orçamento mensal pelo emitente | `internal_id=issuer_funds.id`, `operation=allocate_budget`, `amount=orçamento mensal` |
+| `update_budget` | Edição de orçamento ou categorias existentes | `internal_id=issuer_funds.id`, `operation=update_budget`, `amount=orçamento mensal atualizado` |
+| `link_beneficiary` | Vinculação do beneficiário ao emissor (sem crédito de saldo) | `internal_id=issuer_beneficiary.id`, `operation=link_beneficiary`, `amount=0` (não enviado). Disparada em **NOVO BENEFICIÁRIO** e também em **ADICIONAR SALDO (CPF)** quando o vínculo ainda não existe |
+| `create_beneficiary` | Cadastro de novo usuário beneficiário na plataforma | `internal_id=issuer_beneficiary.id`, `operation=create_beneficiary`, `amount=0` (não enviado). Disparada apenas quando o CPF ainda não existe na base (fluxo **NOVO BENEFICIÁRIO**) |
+| `charge` | Geração de cobrança pelo lojista | `internal_id=charge.id`, `operation=charge`, `amount=valor da cobrança` |
+| `onramp_pix_settled` | PIX de entrada liquidado e convertido em TESOURO na carteira do emissor | Não usa `stellar-register`: hash é o `tx hash` da emissão TESOURO (`stellar-issue-tesouro`), com `internal_id=onramp_order.id` e `amount=amount_brl` |
+| `offramp_burn` | Queima (burn) de TESOURO para iniciar liquidação PIX ao lojista | Não usa `stellar-register`: hash é o `tx hash` da transação de burn (`stellar-burn-tesouro`), com `internal_id=offramp_order.id` e `amount=tx.amount` |
+| `offramp_pix_paid` | Liquidação PIX concluída para o lojista no fluxo de off-ramp | Não gera hash novo: reutiliza o hash do `offramp_burn`, com `internal_id=offramp_order.id` e `amount=tx.amount` |
+| `offramp_failed` | Status de falha no fluxo de off-ramp (permite diagnóstico e reprocessamento) | Não registra hash próprio na Stellar; é apenas status operacional para monitoramento/reenvio |
+
+Observação importante sobre as ações da tela de beneficiários:
+
+- **NOVO BENEFICIÁRIO:** pode registrar `create_beneficiary` (se CPF novo) + `link_beneficiary` (vínculo com o emissor), sem emissão de voucher.
+- **ADICIONAR SALDO (CPF):** registra `create_voucher` (com valor) e, se necessário, também `link_beneficiary` quando o beneficiário ainda não estava vinculado ao emissor.
 
 ### Como funciona:
 
 1. Cada operação gera um registro interno com `internal_id` único
 2. A edge function `stellar-register` monta uma transação Stellar com:
    - **Pagamento de 0.0000001 XLM** para a própria conta (custo mínimo)
-   - **Memo criptografado** contendo o hash SHA-256 do `internal_id` + valor
+   - **Memo hash** contendo o SHA-256 de `internal_id|operation|amount` (com `amount=0` quando não enviado)
 3. A transação é **assinada e submetida** à Stellar Testnet via Horizon
 4. O **hash da transação** (`stellar_tx_hash`) é salvo no banco e exibido em todas as telas
 5. Qualquer pessoa pode consultar a transação no **Stellar Explorer** pelo hash
@@ -199,3 +204,50 @@ npm run build
 ---
 
 **TIKIN Tecnologia** — Todos os direitos reservados.
+
+---
+
+## 🚢 Deploy com Dokploy
+
+Este repositório já está preparado para deploy com **Dockerfile** no Dokploy:
+
+- `Dockerfile` com build de produção (Vite) e runtime com Nginx
+- `nginx.conf` com fallback para SPA (`/index.html`)
+- `.dockerignore` para reduzir o contexto de build
+
+### Passo a passo no Dokploy
+
+1. Crie uma aplicação do tipo **Dockerfile**.
+2. Conecte este repositório Git.
+3. Configure a branch de deploy (ex.: `main`).
+4. Configure a porta interna como `80`.
+5. Na tela **Build Type** (igual à imagem), preencha:
+   - **Build Type:** `Dockerfile`
+   - **Docker File:** `Dockerfile`
+   - **Docker Context Path:** `.`
+   - **Docker Build Stage:** deixe vazio (ou `runtime`)
+6. Em **Environment Variables** (Build/Runtime), adicione exatamente:
+   - `VITE_SUPABASE_PROJECT_ID`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_SUPABASE_URL`
+   - `TIKIN_ADMIN_EMAIL`
+   - `TIKIN_ADMIN_PASSWORD`
+7. Configure domínio e TLS no Dokploy.
+8. Execute o primeiro deploy.
+
+### Valores para Supabase.com
+
+- `VITE_SUPABASE_PROJECT_ID`: `PROJECT_REF` do projeto (ex.: `oeevjolpgqafqzvnviqs`)
+- `VITE_SUPABASE_URL`: URL do projeto no formato `https://SEU_PROJECT_REF.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`: chave **anon/publishable** do projeto Supabase
+- `TIKIN_ADMIN_EMAIL`: e-mail administrativo definido por você
+- `TIKIN_ADMIN_PASSWORD`: senha administrativa definida por você
+
+> Não use `service_role` no frontend. Essa chave é sensível e deve ficar apenas no backend/edge functions.
+
+### Observações importantes
+
+- Como é um app Vite, variáveis `VITE_*` são embutidas no build.
+- O `Dockerfile` já mapeia `TIKIN_ADMIN_EMAIL/PASSWORD` para `VITE_TIKIN_ADMIN_EMAIL/PASSWORD` durante o build.
+- Se alterar qualquer `VITE_*`, faça novo deploy para refletir no frontend.
+- Use `.env.dokploy.example` como referência para as chaves necessárias.

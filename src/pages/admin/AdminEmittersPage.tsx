@@ -96,7 +96,7 @@ export default function AdminEmittersPage() {
       return;
     }
 
-    toast.success(!issuer.is_enabled ? 'Emitente ativado.' : 'Emitente desativado.');
+    toast.success(!issuer.is_enabled ? 'Emitente ativado.' : 'Emitente desativado com sucesso.');
     void loadIssuers();
   };
 

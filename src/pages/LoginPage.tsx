@@ -174,14 +174,16 @@ export default function LoginPage() {
     try {
       setResendLoading(true);
       const email = await resolveEmailFromIdentifier(value);
-      const emailRedirectTo = `${window.location.origin}/redefinir-senha`;
+      const emailRedirectTo = `${window.location.origin}/ativar-cadastro`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: emailRedirectTo,
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo },
       });
 
       if (error) throw error;
-      toast.success('Enviamos um link para redefinir sua senha no e-mail cadastrado.');
+      toast.success('Enviamos um novo e-mail de confirmação de cadastro.');
     } catch (err: any) {
       toast.error(err?.message || 'Não foi possível reenviar a ativação.');
     } finally {

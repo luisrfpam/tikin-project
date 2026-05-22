@@ -978,6 +978,10 @@ export type Database = {
           user_id: string
         }
       }
+      can_request_password_recovery: {
+        Args: { _email: string }
+        Returns: boolean
+      }
       consume_issuer_funds:
         | { Args: { _issuer_id: string; _value: number }; Returns: undefined }
         | {

@@ -13,15 +13,33 @@ export default function RecuperarSenha() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
+    const normalizedEmail = email.trim().toLowerCase();
+
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${getCanonicalAppOrigin()}/redefinir-senha`,
+
+    const { data: canRequestReset, error: checkError } = await supabase.rpc('can_request_password_recovery', {
+      _email: normalizedEmail,
     });
-    setLoading(false);
-    if (error) {
-      toast.error('Não foi possível enviar. Verifique o email.');
+
+    if (checkError) {
+      setLoading(false);
+      toast.error('Não foi possível processar a solicitação agora. Tente novamente.');
       return;
     }
+
+    if (canRequestReset) {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${getCanonicalAppOrigin()}/redefinir-senha`,
+      });
+
+      if (error) {
+        setLoading(false);
+        toast.error('Não foi possível enviar. Verifique o email.');
+        return;
+      }
+    }
+
+    setLoading(false);
     setSent(true);
   };
 

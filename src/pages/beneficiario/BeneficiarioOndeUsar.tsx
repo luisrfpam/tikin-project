@@ -45,6 +45,12 @@ export default function BeneficiarioOndeUsar() {
   const [view, setView] = useState<'list'|'map'>('list');
   const [selected, setSelected] = useState<Establishment | null>(null);
 
+  const getEstablishmentCategories = (e: Establishment) => {
+    const accepted = (e.accepted_categories || []).filter(Boolean);
+    if (accepted.length > 0) return accepted;
+    return e.category ? [e.category] : [];
+  };
+
   useEffect(() => {
     supabase.from('establishments').select('*').then(({ data }) => setEstabs((data as any) ?? []));
     if (user) {
@@ -82,11 +88,12 @@ export default function BeneficiarioOndeUsar() {
 
   const filtered = useMemo(() => {
     let list = estabs.filter(e => {
+      const estCats = getEstablishmentCategories(e);
       if (query && !e.name.toLowerCase().includes(query.toLowerCase())) return false;
-      if (category !== 'todos' && !(e.accepted_categories||[]).includes(category)) return false;
+      if (category !== 'todos' && !estCats.includes(category)) return false;
       // Quando há emissor selecionado, mostra apenas estabelecimentos que aceitam
       // pelo menos uma categoria dos vouchers ativos daquele emissor.
-      if (scope.current && scopedCats.length && !(e.accepted_categories||[]).some(c => scopedCats.includes(c))) return false;
+      if (scope.current && scopedCats.length && !estCats.some(c => scopedCats.includes(c))) return false;
       return true;
     });
     if (sortByDistance && pos) {
@@ -98,7 +105,27 @@ export default function BeneficiarioOndeUsar() {
     return list;
   }, [estabs, query, category, sortByDistance, pos, scope.current, scopedCats]);
 
-  const cats = ['todos', ...Array.from(new Set(estabs.flatMap(e => e.accepted_categories || [])))];
+  const cats = useMemo(() => {
+    const fromEstablishments = estabs.flatMap(getEstablishmentCategories);
+    const fromVouchers = scopedCats.length ? scopedCats : voucherCats.map(v => v.category);
+    const merged = Array.from(new Set([...fromEstablishments, ...fromVouchers].filter(Boolean)));
+
+    const orderMap = new Map(catList.map((c, idx) => [c.id, c.sort_order ?? idx + 1]));
+    merged.sort((a, b) => {
+      const orderA = orderMap.get(a) ?? Number.POSITIVE_INFINITY;
+      const orderB = orderMap.get(b) ?? Number.POSITIVE_INFINITY;
+      if (orderA !== orderB) return orderA - orderB;
+      return categoryLabel(a, catList).localeCompare(categoryLabel(b, catList), 'pt-BR');
+    });
+
+    return ['todos', ...merged];
+  }, [estabs, scopedCats, voucherCats, catList]);
+
+  useEffect(() => {
+    if (category !== 'todos' && !cats.includes(category)) {
+      setCategory('todos');
+    }
+  }, [cats, category]);
 
   return (
     <div className="min-h-screen bg-[#F0F2F5] pb-28">

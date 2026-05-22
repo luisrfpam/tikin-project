@@ -183,7 +183,14 @@ export default function LoginPage() {
         options: { emailRedirectTo },
       });
 
-      if (error) throw error;
+      if (error) {
+        const { error: fallbackError } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+        });
+        if (fallbackError) throw fallbackError;
+      }
+
       toast.success('Enviamos um novo e-mail de confirmação de cadastro.');
     } catch (err: any) {
       toast.error(err?.message || 'Não foi possível reenviar a ativação.');

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -6,7 +6,35 @@ import { toast } from 'sonner';
 export default function RedefinirSenha() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+    const hashType = (hashParams.get('type') || '').toLowerCase();
+
+    if (accessToken && refreshToken && hashType === 'recovery') {
+      supabase.auth
+        .setSession({ access_token: accessToken, refresh_token: refreshToken })
+        .then(({ error }) => {
+          if (error) {
+            toast.error('Link de recuperação inválido ou expirado. Solicite um novo.');
+            navigate('/recuperar-senha', { replace: true });
+          } else {
+            // Remove tokens from URL without reloading
+            history.replaceState(null, '', window.location.pathname);
+            setSessionReady(true);
+          }
+        });
+    } else {
+      setSessionReady(true);
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,6 +46,14 @@ export default function RedefinirSenha() {
     toast.success('Senha redefinida com sucesso!');
     navigate('/login');
   };
+
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-tikin-orange border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col">

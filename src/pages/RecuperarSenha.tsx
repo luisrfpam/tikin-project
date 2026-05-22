@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { isValidEmail } from '@/lib/validators';
+import { getCanonicalAppOrigin } from '@/lib/appUrl';
 
 export default function RecuperarSenha() {
   const [email, setEmail] = useState('');
@@ -14,7 +15,7 @@ export default function RecuperarSenha() {
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${window.location.origin}/redefinir-senha`,
+      redirectTo: `${getCanonicalAppOrigin()}/redefinir-senha`,
     });
     setLoading(false);
     if (error) {

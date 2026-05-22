@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { maskCPF, maskCNPJ, maskCEP, isValidCPF, isValidCNPJ, isValidCEP, isValidEmail } from '@/lib/validators';
 import { useCategories } from '@/lib/categories';
+import { getCanonicalAppOrigin } from '@/lib/appUrl';
 
 type Profile = 'empresa' | 'beneficiario' | 'lojista' | null;
 
@@ -135,7 +136,7 @@ async function signupCommon(email: string, password: string, metadata: SignupMet
   const redirectPath = metadata.role === 'beneficiario' || metadata.role === 'lojista'
     ? '/ativar-cadastro'
     : '/login';
-  const emailRedirectTo = `${window.location.origin}${redirectPath}`;
+  const emailRedirectTo = `${getCanonicalAppOrigin()}${redirectPath}`;
 
   const result = await supabase.auth.signUp({
     email,

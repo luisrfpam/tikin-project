@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { maskCPF, maskCNPJ, isValidCPF, isValidCNPJ, isValidEmail, onlyDigits, looksLikeDocument } from '@/lib/validators';
+import { getCanonicalAppOrigin } from '@/lib/appUrl';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 3 * 60 * 1000;
@@ -160,7 +161,7 @@ export default function LoginPage() {
 
     const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: digits });
     if (error || !data) {
-      throw new Error('Não foi possível localizar um cadastro ativo para esse identificador');
+      throw new Error('Não foi possível localizar um cadastro para esse identificador');
     }
 
     return data;
@@ -173,8 +174,8 @@ export default function LoginPage() {
 
     try {
       setResendLoading(true);
-      const email = await resolveEmailFromIdentifier(value);
-      const emailRedirectTo = `${window.location.origin}/ativar-cadastro`;
+      const email = (await resolveEmailFromIdentifier(value)).toLowerCase();
+      const emailRedirectTo = `${getCanonicalAppOrigin()}/ativar-cadastro`;
 
       const { error } = await supabase.auth.resend({
         type: 'signup',

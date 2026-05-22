@@ -174,16 +174,14 @@ export default function LoginPage() {
     try {
       setResendLoading(true);
       const email = await resolveEmailFromIdentifier(value);
-      const emailRedirectTo = `${window.location.origin}/ativar-cadastro`;
+      const emailRedirectTo = `${window.location.origin}/redefinir-senha`;
 
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-        options: { emailRedirectTo },
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: emailRedirectTo,
       });
 
       if (error) throw error;
-      toast.success('Enviamos um novo link de ativação para o e-mail cadastrado.');
+      toast.success('Enviamos um link para redefinir sua senha no e-mail cadastrado.');
     } catch (err: any) {
       toast.error(err?.message || 'Não foi possível reenviar a ativação.');
     } finally {
@@ -366,7 +364,7 @@ export default function LoginPage() {
                   disabled={resendLoading}
                   className="text-tikin-navy font-extrabold underline disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {resendLoading ? 'REENVIANDO...' : 'REENVIAR ATIVAÇÃO'}
+                  {resendLoading ? 'Reenviando...' : 'Reenviar ativação'}
                 </button>
               )}
               <Link to="/recuperar-senha" className="text-tikin-navy font-extrabold underline">Recuperar senha</Link>

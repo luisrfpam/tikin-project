@@ -502,7 +502,7 @@ export default function EmissorBlockchain() {
                             disabled={!!retryingId}
                             className="px-2 py-0.5 rounded-md border border-tikin-orange/40 bg-tikin-orange/10 text-tikin-orange text-[10px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {retryingId === r.id ? 'REENVIANDO…' : 'REENVIAR'}
+                            {retryingId === r.id ? 'Reenviando...' : 'Reenviar'}
                           </button>
                         )}
                       </div>

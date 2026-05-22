@@ -195,19 +195,25 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
+    const corporateEmail = form.corporate_email.trim().toLowerCase();
+
     if (!form.razao_social.trim()) return toast.error('Informe a razão social');
     if (!isValidCNPJ(form.cnpj)) return toast.error('CNPJ inválido');
     if (!form.responsible_name.trim()) return toast.error('Informe o nome do responsável');
     if (!form.responsible_role.trim()) return toast.error('Informe o cargo');
-    if (!isValidEmail(form.corporate_email)) return toast.error('E-mail corporativo inválido');
+    if (!isValidEmail(corporateEmail)) return toast.error('E-mail corporativo inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+
+    setLoading(true);
     try {
       await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
     } catch (e: any) {
+      setLoading(false);
       return toast.error(e?.message || 'CNPJ já cadastrado.');
     }
-    setLoading(true);
-    const { data, error } = await signupCommon(form.corporate_email, form.password, {
+    const { data, error } = await signupCommon(corporateEmail, form.password, {
       name: form.responsible_name,
       role: 'emissor',
       cnpj: form.cnpj,
@@ -215,7 +221,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
       razao_social: form.razao_social,
       responsible_name: form.responsible_name,
       responsible_role: form.responsible_role,
-      corporate_email: form.corporate_email,
+      corporate_email: corporateEmail,
     });
     if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
 
@@ -269,17 +275,23 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
+    const personalEmail = form.email.trim().toLowerCase();
+
     if (!form.name.trim()) return toast.error('Informe seu nome');
     if (!isValidCPF(form.cpf)) return toast.error('CPF inválido');
-    if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
+    if (!isValidEmail(personalEmail)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+
+    setLoading(true);
     try {
       await ensureIdentifierAvailable(form.cpf, 'CPF');
     } catch (e: any) {
+      setLoading(false);
       return toast.error(e?.message || 'CPF já cadastrado.');
     }
-    setLoading(true);
-    const { data, error } = await signupCommon(form.email, form.password, {
+    const { data, error } = await signupCommon(personalEmail, form.password, {
       name: form.name,
       role: 'beneficiario',
       cpf: form.cpf,
@@ -350,6 +362,10 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
+    const contactEmail = form.email.trim().toLowerCase();
+
     if (!form.trade_name.trim()) return toast.error('Informe o nome fantasia');
     if (!form.razao_social.trim()) return toast.error('Informe a razão social');
     if (!isValidCNPJ(form.cnpj)) return toast.error('CNPJ inválido');
@@ -360,16 +376,18 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
     if (!form.bairro.trim()) return toast.error('Informe o bairro');
     if (!form.cidade.trim()) return toast.error('Informe a cidade');
     if (!form.uf.trim()) return toast.error('Informe a UF');
-    if (!isValidEmail(form.email)) return toast.error('E-mail inválido');
+    if (!isValidEmail(contactEmail)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
     const fullAddress = `${form.logradouro}, ${form.numero}${form.complemento ? ' - ' + form.complemento : ''} - ${form.bairro}, ${form.cidade}/${form.uf}`;
+
+    setLoading(true);
     try {
       await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
     } catch (e: any) {
+      setLoading(false);
       return toast.error(e?.message || 'CNPJ já cadastrado.');
     }
-    setLoading(true);
-    const { data, error } = await signupCommon(form.email, form.password, {
+    const { data, error } = await signupCommon(contactEmail, form.password, {
       name: form.trade_name,
       role: 'lojista',
       cnpj: form.cnpj,
@@ -384,7 +402,7 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
       cidade: form.cidade,
       uf: form.uf,
       address: fullAddress,
-      contact_email: form.email,
+      contact_email: contactEmail,
     });
     if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');

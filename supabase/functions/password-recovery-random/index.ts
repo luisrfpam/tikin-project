@@ -6,8 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const eligibleRoles = ["beneficiario", "lojista", "emissor"] as const;
-
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -38,33 +36,20 @@ Deno.serve(async (req) => {
 
     const url = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const admin = createClient(url, serviceKey);
     const authClient = createClient(url, anonKey);
 
-    const { data: profile, error: profileError } = await admin
-      .from("profiles")
-      .select("id, email, name")
-      .ilike("email", email)
-      .maybeSingle();
-
-    if (profileError) throw profileError;
-    if (!profile) return done;
-
-    const { data: roles, error: rolesError } = await admin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", profile.id)
-      .in("role", [...eligibleRoles])
-      .limit(1);
-
-    if (rolesError) throw rolesError;
-    if (!roles || roles.length === 0) return done;
-
-    const { error: resetError } = await authClient.auth.resetPasswordForEmail(profile.email, {
+    const { error: resetWithRedirectError } = await authClient.auth.resetPasswordForEmail(email, {
       redirectTo: redirectTo || undefined,
     });
-    if (resetError) throw resetError;
+
+    if (resetWithRedirectError && redirectTo) {
+      // Fallback for invalid redirect URL allow-list configuration.
+      const { error: resetWithoutRedirectError } = await authClient.auth.resetPasswordForEmail(email);
+      if (resetWithoutRedirectError) throw resetWithoutRedirectError;
+      return done;
+    }
+
+    if (resetWithRedirectError) throw resetWithRedirectError;
 
     return done;
   } catch (e) {

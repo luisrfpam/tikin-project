@@ -27,3 +27,6 @@ dist-ssr
 # Supabase temp/local CLI files
 supabase/.temp/
 supabase/.branches/
+
+# Local personal guides (not versioned)
+local-guides/

@@ -13,11 +13,8 @@ export default function RecuperarSenha() {
     e.preventDefault();
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
     setLoading(true);
-    const { error } = await supabase.functions.invoke('password-recovery-random', {
-      body: {
-        email: email.trim().toLowerCase(),
-        redirectTo: `${window.location.origin}/redefinir-senha`,
-      },
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: `${window.location.origin}/redefinir-senha`,
     });
     setLoading(false);
     if (error) {

@@ -238,7 +238,11 @@ export default function LoginPage() {
     if (error) {
       const msg = (error.message || '').toLowerCase();
       if (msg.includes('email not confirmed') || msg.includes('email_not_confirmed')) {
-        toast.error('Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada e spam.');
+        if (role === 'emissor') {
+          toast.error('Seu acesso de emitente ainda não foi ativado pelo admin. Assim que aprovado, seu login será liberado.');
+        } else {
+          toast.error('Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada e spam.');
+        }
         return;
       }
       registerFailure();

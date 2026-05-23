@@ -11,6 +11,19 @@ function parseHashParams() {
   return new URLSearchParams(hash);
 }
 
+function normalizeActivationError(err: any) {
+  const raw = (err?.message || '').toLowerCase();
+  if (
+    raw.includes('auth session missing') ||
+    raw.includes('session missing') ||
+    raw.includes('invalid or expired') ||
+    raw.includes('otp_expired')
+  ) {
+    return 'Link de ativacao invalido ou expirado. Solicite um novo link e tente novamente.';
+  }
+  return err?.message || 'Falha ao ativar cadastro. Solicite um novo link.';
+}
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(timeoutMessage)), ms);
@@ -35,16 +48,17 @@ export default function AtivarCadastro() {
     const run = async () => {
       try {
         const hashParams = parseHashParams();
+        const queryParams = new URLSearchParams(window.location.search);
         const accessToken = hashParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token');
-        const code = new URLSearchParams(window.location.search).get('code');
+        const code = queryParams.get('code');
+        const tokenHash = queryParams.get('token_hash') || hashParams.get('token_hash');
+        const rawType = (queryParams.get('type') || hashParams.get('type') || 'signup').toLowerCase();
+        const otpType = rawType === 'recovery' ? 'recovery' : 'signup';
 
-        if (!(accessToken && refreshToken) && !code) {
+        if (!(accessToken && refreshToken) && !code && !tokenHash) {
           throw new Error('Link de ativacao invalido ou expirado. Solicite um novo link.');
         }
-
-        // Garante sessão única local antes de ativar outro usuário.
-        await supabase.auth.signOut();
 
         if (accessToken && refreshToken) {
           const { error: setSessionError } = await withTimeout(supabase.auth.setSession({
@@ -52,15 +66,43 @@ export default function AtivarCadastro() {
             refresh_token: refreshToken,
           }), ACTIVATION_TIMEOUT_MS, 'Tempo esgotado ao validar sessao de ativacao.');
           if (setSessionError) throw setSessionError;
-        } else {
-          if (code) {
-            const { error: exchangeError } = await withTimeout(
+        } else if (code) {
+          let codeExchangeError: Error | null = null;
+          {
+            const { error } = await withTimeout(
               supabase.auth.exchangeCodeForSession(code),
               ACTIVATION_TIMEOUT_MS,
               'Tempo esgotado ao validar codigo de ativacao.'
             );
-            if (exchangeError) throw exchangeError;
+            if (error) {
+              codeExchangeError = new Error(error.message);
+            }
           }
+
+          // Fallback para links com token_hash (ou quando code flow falha sem verifier local).
+          if (codeExchangeError && tokenHash) {
+            const { error: otpError } = await withTimeout(
+              supabase.auth.verifyOtp({
+                token_hash: tokenHash,
+                type: otpType,
+              }),
+              ACTIVATION_TIMEOUT_MS,
+              'Tempo esgotado ao validar token de ativacao.'
+            );
+            if (otpError) throw otpError;
+          } else if (codeExchangeError) {
+            throw codeExchangeError;
+          }
+        } else if (tokenHash) {
+          const { error: otpError } = await withTimeout(
+            supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: otpType,
+            }),
+            ACTIVATION_TIMEOUT_MS,
+            'Tempo esgotado ao validar token de ativacao.'
+          );
+          if (otpError) throw otpError;
         }
 
         const { data: { session } } = await withTimeout(
@@ -93,7 +135,7 @@ export default function AtivarCadastro() {
       } catch (err: any) {
         void supabase.auth.signOut();
         setState('error');
-        setMessage(err?.message || 'Falha ao ativar cadastro. Solicite um novo link.');
+        setMessage(normalizeActivationError(err));
       }
     };
 

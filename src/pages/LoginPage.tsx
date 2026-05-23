@@ -264,6 +264,8 @@ export default function LoginPage() {
     }
 
     setLoading(true);
+    // Evita conflito de sessão quando o usuário troca de perfil/conta no mesmo navegador.
+    await supabase.auth.signOut();
     if (!value.includes('@')) {
       const { data, error } = await supabase.rpc('lookup_email_by_identifier', {
         _identifier: onlyDigits(value),

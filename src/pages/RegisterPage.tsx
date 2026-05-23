@@ -260,7 +260,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
     <div>
       <BackBtn onBack={onBack} />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">CADASTRO DE EMPRESA</h2>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <Input placeholder="Razão Social" required value={form.razao_social} onChange={e => set('razao_social', e.target.value)} />
         <Input placeholder="CNPJ" required inputMode="numeric" value={form.cnpj} onChange={e => set('cnpj', maskCNPJ(e.target.value))} />
         <Input placeholder="Nome Completo do Responsável" required value={form.responsible_name} onChange={e => set('responsible_name', e.target.value)} />
@@ -321,7 +321,7 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
     <div>
       <BackBtn onBack={onBack} />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">ATIVAR CONTA BENEFICIÁRIO</h2>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <Input placeholder="Nome Completo" required value={form.name} onChange={e => set('name', e.target.value)} />
         <Input placeholder="CPF" required inputMode="numeric" value={form.cpf} onChange={e => set('cpf', maskCPF(e.target.value))} />
         <Input type="email" placeholder="E-mail Pessoal" required value={form.email} onChange={e => set('email', e.target.value)} />
@@ -488,7 +488,7 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
     <div>
       <BackBtn onBack={onBack} color="orange" />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">CREDENCIAR ESTABELECIMENTO</h2>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <Input
           placeholder="Nome Fantasia"
           required

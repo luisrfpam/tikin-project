@@ -171,6 +171,50 @@ export default function LoginPage() {
     setIdentifier(raw);
   };
 
+  const isRpcSignatureMismatch = (error: any) => {
+    const msg = String(error?.message || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return code === 'pgrst202' || msg.includes('function') || msg.includes('does not exist');
+  };
+
+  const lookupEmailByIdentifier = async (digits: string, expectedRole: Role, allowLooseFallback: boolean) => {
+    const roleLookup = await supabase.rpc('lookup_email_by_identifier', {
+      _identifier: digits,
+      _expected_role: expectedRole,
+    });
+
+    if (!roleLookup.error && roleLookup.data) {
+      return String(roleLookup.data);
+    }
+
+    const shouldTryLegacyLookup =
+      isRpcSignatureMismatch(roleLookup.error) || (allowLooseFallback && !roleLookup.data);
+
+    if (shouldTryLegacyLookup) {
+      const legacyLookup = await supabase.rpc('lookup_email_by_identifier', {
+        _identifier: digits,
+      });
+      if (!legacyLookup.error && legacyLookup.data) {
+        return String(legacyLookup.data);
+      }
+      if (legacyLookup.error) throw legacyLookup.error;
+    }
+
+    if (roleLookup.error) throw roleLookup.error;
+    return null;
+  };
+
+  const mapResendErrorMessage = (error: any) => {
+    const msg = String(error?.message || '').toLowerCase();
+    if (msg.includes('rate limit')) {
+      return 'Aguarde alguns instantes antes de reenviar novamente.';
+    }
+    if (msg.includes('email')) {
+      return 'Não foi possível reenviar para este e-mail agora. Confira o endereço e tente novamente.';
+    }
+    return error?.message || 'Não foi possível reenviar a ativação.';
+  };
+
   const resolveEmailFromIdentifier = async (value: string) => {
     if (value.includes('@')) {
       if (!isValidEmail(value)) {
@@ -193,11 +237,8 @@ export default function LoginPage() {
       throw new Error(DOC_MESSAGES.cnpjInvalid);
     }
 
-    const { data, error } = await supabase.rpc('lookup_email_by_identifier', {
-      _identifier: digits,
-      _expected_role: role,
-    });
-    if (error || !data) {
+    const data = await lookupEmailByIdentifier(digits, role, true);
+    if (!data) {
       throw new Error(DOC_MESSAGES.identifierNotFoundForRole);
     }
 
@@ -230,7 +271,7 @@ export default function LoginPage() {
 
       toast.success('Enviamos um novo e-mail de confirmação de cadastro.');
     } catch (err: any) {
-      toast.error(err?.message || 'Não foi possível reenviar a ativação.');
+      toast.error(mapResendErrorMessage(err));
     } finally {
       setResendLoading(false);
     }
@@ -267,11 +308,8 @@ export default function LoginPage() {
     // Evita conflito de sessão quando o usuário troca de perfil/conta no mesmo navegador.
     await supabase.auth.signOut();
     if (!value.includes('@')) {
-      const { data, error } = await supabase.rpc('lookup_email_by_identifier', {
-        _identifier: onlyDigits(value),
-        _expected_role: role,
-      });
-      if (error || !data) {
+      const data = await lookupEmailByIdentifier(onlyDigits(value), role, false);
+      if (!data) {
         setLoading(false);
         toast.error(DOC_MESSAGES.identifierNotFoundForRole);
         return;

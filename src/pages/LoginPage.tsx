@@ -337,10 +337,11 @@ export default function LoginPage() {
     }
 
     setLoading(true);
+    try {
     // Evita conflito de sessão quando o usuário troca de perfil/conta no mesmo navegador.
     await supabase.auth.signOut();
     if (!value.includes('@')) {
-      const data = await lookupEmailByIdentifier(onlyDigits(value), role, false);
+      const data = await lookupEmailByIdentifier(onlyDigits(value), role, true);
       if (!data) {
         setLoading(false);
         toast.error(DOC_MESSAGES.identifierNotFoundForRole);
@@ -416,6 +417,10 @@ export default function LoginPage() {
 
       clearAttempts(attemptKey);
       navigate('/');
+    }
+    } catch (err: any) {
+      setLoading(false);
+      toast.error(err?.message || 'Erro ao tentar fazer login. Tente novamente.');
     }
   };
 

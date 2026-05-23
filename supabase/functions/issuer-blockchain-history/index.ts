@@ -18,6 +18,7 @@ type BlockchainRow = {
   created_at: string;
   business_status?: string | null;
   counterparty_label?: string | null;
+  cycle_transaction_id?: string | null;
 };
 
 type OnrampRow = {
@@ -182,11 +183,13 @@ Deno.serve(async (req) => {
     const enrichedRows = rows.map((row) => {
       let businessStatus: string | null = null;
       let counterpartyLabel: string | null = null;
+      let cycleTransactionId: string | null = null;
 
       if (row.entity_type === "transaction") {
         const tx = txById.get(row.internal_id);
         if (tx) {
           businessStatus = tx.status;
+          cycleTransactionId = tx.id;
           const merchant = tx.establishment_id ? estById.get(tx.establishment_id) : null;
           if (tx.beneficiary_name || merchant) {
             counterpartyLabel = `${tx.beneficiary_name || "Beneficiário"} -> ${merchant || "Lojista"}`;
@@ -196,12 +199,14 @@ Deno.serve(async (req) => {
         const charge = chargeById.get(row.internal_id);
         if (charge) {
           businessStatus = charge.status;
+          cycleTransactionId = charge.transaction_id || null;
           const merchant = charge.establishment_id ? estById.get(charge.establishment_id) : null;
           if (merchant) counterpartyLabel = merchant;
         }
       } else if (row.entity_type === "offramp_order") {
         const order = offrampById.get(row.internal_id);
         if (order) {
+          cycleTransactionId = order.transaction_id || null;
           const tx = order.transaction_id ? txById.get(order.transaction_id) : null;
           // If the source payment was reversed, expose this in issuer history so reconciliations are clear.
           businessStatus = tx?.status === "reversed" ? "reversed" : (order.status || null);
@@ -216,6 +221,7 @@ Deno.serve(async (req) => {
         ...row,
         business_status: businessStatus,
         counterparty_label: counterpartyLabel,
+        cycle_transaction_id: cycleTransactionId,
       };
     });
 

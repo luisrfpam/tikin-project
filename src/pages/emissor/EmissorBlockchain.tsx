@@ -23,6 +23,7 @@ interface Row {
   created_at: string;
   business_status?: string | null;
   counterparty_label?: string | null;
+  cycle_transaction_id?: string | null;
 }
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -312,6 +313,45 @@ export default function EmissorBlockchain() {
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  const cycleGroups = (() => {
+    const map = new Map<string, Row[]>();
+    for (const row of filtered) {
+      const key = row.cycle_transaction_id;
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(row);
+    }
+
+    return Array.from(map.entries()).map(([transactionId, groupRows]) => {
+      const sortedRows = [...groupRows].sort((a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      const chargeRow = sortedRows.find((r) =>
+        r.entity_type === 'charge' && (r.operation === 'charge' || r.operation === 'create_charge' || r.operation === 'charge.create'),
+      );
+      const payRow = sortedRows.find((r) =>
+        r.entity_type === 'transaction' && (r.operation === 'pay_voucher' || r.operation === 'voucher.pay'),
+      );
+      const burnRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_burn');
+      const pixRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_pix_paid');
+      const amount = Number(payRow?.amount ?? chargeRow?.amount ?? burnRow?.amount ?? pixRow?.amount ?? 0);
+      const startedAt = sortedRows[0]?.created_at;
+      const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || chargeRow?.counterparty_label || null;
+
+      return {
+        transactionId,
+        rows: sortedRows,
+        chargeRow,
+        payRow,
+        burnRow,
+        pixRow,
+        amount,
+        startedAt,
+        counterparty,
+      };
+    }).sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  })();
+
   const businessStatusBadge = (status?: string | null) => {
     if (status === 'confirmed' || status === 'paid' || status === 'active') {
       return <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">NEGÓCIO OK</span>;
@@ -326,6 +366,15 @@ export default function EmissorBlockchain() {
       return <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">NEGÓCIO FALHOU</span>;
     }
     return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 text-[10px] font-bold">SEM VÍNCULO</span>;
+  };
+
+  const cycleStageBadge = (row?: Row) => {
+    if (!row) return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/40 text-[10px] font-bold">NÃO GERADO</span>;
+    if (row.business_status === 'reversed') return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/70 text-[10px] font-bold">ESTORNADO</span>;
+    if (row.status === 'success') return <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">OK</span>;
+    if (row.status === 'pending') return <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>;
+    if (row.status === 'failed') return <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">FALHA</span>;
+    return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 text-[10px] font-bold">{row.status.toUpperCase()}</span>;
   };
 
   const hasSuccessfulOfframpForInternalId = (internalId: string) => rows.some(x =>
@@ -506,6 +555,46 @@ export default function EmissorBlockchain() {
               Ocultar estornados
             </label>
           </div>
+        </div>
+
+        {/* Ciclos por transação */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-tikin-orange font-black">Ciclo auditável por transação</p>
+              <p className="text-xs text-white/50 mt-0.5">Cobrança -> Uso de voucher -> Off-ramp burn -> PIX pago</p>
+            </div>
+            <span className="text-[10px] text-white/40">{cycleGroups.length} ciclos</span>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-white/[0.02] border-b border-white/10 text-[10px] uppercase text-white/40 font-bold">
+              <tr>
+                <th className="px-5 py-3">Quando</th>
+                <th className="px-5 py-3">Tx base</th>
+                <th className="px-5 py-3">Contraparte</th>
+                <th className="px-5 py-3 text-right">Valor</th>
+                <th className="px-5 py-3">Cobrança</th>
+                <th className="px-5 py-3">Voucher</th>
+                <th className="px-5 py-3">Burn</th>
+                <th className="px-5 py-3">PIX</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cycleGroups.length === 0 && <tr><td colSpan={8} className="px-5 py-8 text-center text-xs text-white/40">Nenhum ciclo no filtro atual</td></tr>}
+              {cycleGroups.map(c => (
+                <tr key={c.transactionId} className="border-b border-white/5 last:border-0">
+                  <td className="px-5 py-3 text-xs text-white/60 whitespace-nowrap">{c.startedAt ? format(parseISO(c.startedAt), 'dd/MM/yy HH:mm:ss') : '—'}</td>
+                  <td className="px-5 py-3 text-[10px] font-mono text-white/50">{c.transactionId.slice(0, 8)}…</td>
+                  <td className="px-5 py-3 text-[10px] text-white/70">{c.counterparty || '—'}</td>
+                  <td className="px-5 py-3 text-right text-xs font-heading font-black">R$ {brl(c.amount)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.chargeRow)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.payRow)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.burnRow)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.pixRow)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
         {/* Tabela */}

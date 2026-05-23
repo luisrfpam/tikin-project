@@ -84,7 +84,7 @@ export default function EmissorDashboard() {
 
     const [{ data: vs }, { data: ts }, { data: es }, { data: fs }] = await Promise.all([
       supabase.from('vouchers').select('*').eq('issuer_id', iss.id).order('created_at', { ascending: false }),
-      supabase.from('transactions').select('*, vouchers!inner(issuer_id)').eq('vouchers.issuer_id', iss.id).order('created_at', { ascending: false }).limit(500),
+      supabase.from('transactions').select('*, vouchers!inner(issuer_id)').eq('vouchers.issuer_id', iss.id).eq('status', 'confirmed').order('created_at', { ascending: false }).limit(500),
       supabase.from('establishments').select('id,name,trade_name,category'),
       supabase.from('issuer_funds').select('id,month,monthly_budget,allocated').eq('issuer_id', iss.id).order('month', { ascending: true }),
     ]);

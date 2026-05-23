@@ -31,11 +31,10 @@ export default function LojistaHome() {
         .eq('is_default', true);
       setHasDefaultPix((count ?? 0) > 0);
 
-      const { data } = await supabase.from('transactions').select('*').eq('establishment_id', est.id).order('created_at', { ascending: false });
+      const { data } = await supabase.from('transactions').select('*').eq('establishment_id', est.id).eq('status', 'confirmed').order('created_at', { ascending: false });
       const all = await enrichBeneficiaryNames((data as any[]) ?? []);
-      const confirmed = all.filter(t => t.status === 'confirmed');
-      setTxs(confirmed.slice(0, 8));
-      setTotalReceived(confirmed.reduce((s, t) => {
+      setTxs(all.slice(0, 8));
+      setTotalReceived(all.reduce((s, t) => {
         const sign = t.tx_type === 'debit' ? -1 : 1;
         return s + sign * Number(t.amount);
       }, 0));

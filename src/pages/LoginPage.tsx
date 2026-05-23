@@ -215,6 +215,19 @@ export default function LoginPage() {
     return error?.message || 'Não foi possível reenviar a ativação.';
   };
 
+  const resendActivationViaEdgeFunction = async (email: string, emailRedirectTo: string) => {
+    const { data, error } = await supabase.functions.invoke('resend-signup-activation', {
+      body: { email, redirectTo: emailRedirectTo },
+    });
+
+    if (error) throw error;
+
+    const payload = data as { ok?: boolean; error?: string } | null;
+    if (payload?.ok) return;
+    if (payload?.error) throw new Error(payload.error);
+    throw new Error('Não foi possível reenviar a ativação.');
+  };
+
   const resolveEmailFromIdentifier = async (value: string) => {
     if (value.includes('@')) {
       if (!isValidEmail(value)) {
@@ -266,7 +279,9 @@ export default function LoginPage() {
           type: 'signup',
           email,
         });
-        if (fallbackError) throw fallbackError;
+        if (fallbackError) {
+          await resendActivationViaEdgeFunction(email, emailRedirectTo);
+        }
       }
 
       toast.success('Enviamos um novo e-mail de confirmação de cadastro.');

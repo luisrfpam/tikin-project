@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, Pencil, LogOut, Search } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
 import {
   clearAdminSession,
   hasAdminSession,
@@ -28,6 +29,7 @@ interface AdminIssuer {
 
 export default function AdminEmittersPage() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
@@ -152,9 +154,9 @@ export default function AdminEmittersPage() {
     void loadIssuers();
   };
 
-  const doLogout = () => {
+  const doLogout = async () => {
     clearAdminSession();
-    void supabase.auth.signOut();
+    await signOut();
     navigate('/tikin-admin/login', { replace: true });
   };
 

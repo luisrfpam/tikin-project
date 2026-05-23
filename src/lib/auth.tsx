@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import { clearAdminSession } from '@/lib/adminCredentials';
 
 const MAX_SESSION_AGE_MS = 12 * 60 * 60 * 1000;
 
@@ -48,6 +49,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<AuthContextType['profile']>(null);
 
+  const clearClientAuthState = () => {
+    setSession(null);
+    setUser(null);
+    setRoles([]);
+    setActiveRole(null);
+    setProfile(null);
+    clearAdminSession();
+  };
+
+  const signOut = async () => {
+    clearClientAuthState();
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch {
+      await supabase.auth.signOut();
+    }
+  };
+
   const fetchRolesAndProfile = async (userId: string) => {
     const [rolesRes, profileRes] = await Promise.all([
       supabase.from('user_roles').select('role').eq('user_id', userId),
@@ -81,12 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         didShowSessionExpiredToast = true;
       }
 
-      supabase.auth.signOut().finally(() => {
-        setSession(null);
-        setUser(null);
-        setRoles([]);
-        setActiveRole(null);
-        setProfile(null);
+      void signOut().finally(() => {
         setLoading(false);
       });
     };
@@ -153,10 +167,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
 
   return (
     <AuthContext.Provider value={{ user, session, roles, activeRole, setActiveRole, loading, signOut, profile }}>

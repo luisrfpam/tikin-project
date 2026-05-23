@@ -16,6 +16,8 @@ type BlockchainRow = {
   status: string;
   error: string | null;
   created_at: string;
+  business_status?: string | null;
+  counterparty_label?: string | null;
 };
 
 type OnrampRow = {
@@ -106,7 +108,118 @@ Deno.serve(async (req) => {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
 
-    return new Response(JSON.stringify({ rows, onramps: (onrampsRes.data || []) as OnrampRow[] }), {
+    const txIds = Array.from(
+      new Set(
+        rows
+          .filter((r) => r.entity_type === "transaction" && !!r.internal_id)
+          .map((r) => r.internal_id),
+      ),
+    );
+    const chargeIds = Array.from(
+      new Set(
+        rows
+          .filter((r) => r.entity_type === "charge" && !!r.internal_id)
+          .map((r) => r.internal_id),
+      ),
+    );
+    const offrampIds = Array.from(
+      new Set(
+        rows
+          .filter((r) => r.entity_type === "offramp_order" && !!r.internal_id)
+          .map((r) => r.internal_id),
+      ),
+    );
+
+    const [txRes, chargeRes, offrampRes] = await Promise.all([
+      txIds.length
+        ? admin
+            .from("transactions")
+            .select("id, status, beneficiary_name, establishment_id")
+            .in("id", txIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      chargeIds.length
+        ? admin
+            .from("charges")
+            .select("id, status, transaction_id, establishment_id")
+            .in("id", chargeIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      offrampIds.length
+        ? admin
+            .from("offramp_orders")
+            .select("id, status, transaction_id, establishment_id")
+            .in("id", offrampIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+
+    const txById = new Map<string, any>();
+    for (const row of txRes.data || []) txById.set(row.id, row);
+
+    const chargeById = new Map<string, any>();
+    for (const row of chargeRes.data || []) chargeById.set(row.id, row);
+
+    const offrampById = new Map<string, any>();
+    for (const row of offrampRes.data || []) offrampById.set(row.id, row);
+
+    const establishmentIds = Array.from(
+      new Set(
+        [
+          ...(txRes.data || []).map((x: any) => x.establishment_id),
+          ...(chargeRes.data || []).map((x: any) => x.establishment_id),
+          ...(offrampRes.data || []).map((x: any) => x.establishment_id),
+        ].filter(Boolean),
+      ),
+    );
+
+    const estById = new Map<string, string>();
+    if (establishmentIds.length) {
+      const { data: estRows } = await admin
+        .from("establishments")
+        .select("id, name")
+        .in("id", establishmentIds);
+      for (const e of estRows || []) estById.set(e.id, e.name);
+    }
+
+    const enrichedRows = rows.map((row) => {
+      let businessStatus: string | null = null;
+      let counterpartyLabel: string | null = null;
+
+      if (row.entity_type === "transaction") {
+        const tx = txById.get(row.internal_id);
+        if (tx) {
+          businessStatus = tx.status;
+          const merchant = tx.establishment_id ? estById.get(tx.establishment_id) : null;
+          if (tx.beneficiary_name || merchant) {
+            counterpartyLabel = `${tx.beneficiary_name || "Beneficiário"} -> ${merchant || "Lojista"}`;
+          }
+        }
+      } else if (row.entity_type === "charge") {
+        const charge = chargeById.get(row.internal_id);
+        if (charge) {
+          businessStatus = charge.status;
+          const merchant = charge.establishment_id ? estById.get(charge.establishment_id) : null;
+          if (merchant) counterpartyLabel = merchant;
+        }
+      } else if (row.entity_type === "offramp_order") {
+        const order = offrampById.get(row.internal_id);
+        if (order) {
+          const tx = order.transaction_id ? txById.get(order.transaction_id) : null;
+          // If the source payment was reversed, expose this in issuer history so reconciliations are clear.
+          businessStatus = tx?.status === "reversed" ? "reversed" : (order.status || null);
+          const merchant = order.establishment_id ? estById.get(order.establishment_id) : null;
+          if (tx?.beneficiary_name || merchant) {
+            counterpartyLabel = `${tx?.beneficiary_name || "Beneficiário"} -> ${merchant || "Lojista"}`;
+          }
+        }
+      }
+
+      return {
+        ...row,
+        business_status: businessStatus,
+        counterparty_label: counterpartyLabel,
+      };
+    });
+
+    return new Response(JSON.stringify({ rows: enrichedRows, onramps: (onrampsRes.data || []) as OnrampRow[] }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

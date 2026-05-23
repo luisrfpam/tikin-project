@@ -21,6 +21,8 @@ interface Row {
   status: string;
   error: string | null;
   created_at: string;
+  business_status?: string | null;
+  counterparty_label?: string | null;
 }
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -103,6 +105,7 @@ export default function EmissorBlockchain() {
   const [search, setSearch] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failed' | 'pending'>('all');
+  const [hideReversed, setHideReversed] = useState(true);
   const [periodDays, setPeriodDays] = useState<number | 'all' | 'custom'>(30);
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo] = useState<string>('');
@@ -112,7 +115,7 @@ export default function EmissorBlockchain() {
   const [issuerId, setIssuerId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  useEffect(() => { setPage(1); }, [search, entityFilter, statusFilter, periodDays, customFrom, customTo, pageSize]);
+  useEffect(() => { setPage(1); }, [search, entityFilter, statusFilter, hideReversed, periodDays, customFrom, customTo, pageSize]);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -279,6 +282,7 @@ export default function EmissorBlockchain() {
   const filtered = rows.filter(r => {
     if (entityFilter !== 'all' && r.entity_type !== entityFilter) return false;
     if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (hideReversed && r.business_status === 'reversed') return false;
     const t = new Date(r.created_at).getTime();
     if (periodDays === 'custom') {
       if (customFrom && t < new Date(customFrom).getTime()) return false;
@@ -297,10 +301,32 @@ export default function EmissorBlockchain() {
 
   const successCount = filtered.filter(r => r.status === 'success').length;
   const failedCount = filtered.filter(r => r.status === 'failed').length;
+  const confirmedConsumed = filtered
+    .filter(r => (r.operation === 'pay_voucher' || r.operation === 'voucher.pay') && r.status === 'success' && r.business_status === 'confirmed')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const settledOfframp = filtered
+    .filter(r => r.operation === 'offramp_pix_paid' && r.status === 'success' && r.business_status !== 'reversed')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const businessStatusBadge = (status?: string | null) => {
+    if (status === 'confirmed' || status === 'paid' || status === 'active') {
+      return <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">NEGÓCIO OK</span>;
+    }
+    if (status === 'reversed') {
+      return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/70 text-[10px] font-bold">ESTORNADO</span>;
+    }
+    if (status === 'pending' || status === 'burning' || status === 'burned') {
+      return <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">EM PROCESSO</span>;
+    }
+    if (status === 'failed' || status === 'expired') {
+      return <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">NEGÓCIO FALHOU</span>;
+    }
+    return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 text-[10px] font-bold">SEM VÍNCULO</span>;
+  };
 
   const hasSuccessfulOfframpForInternalId = (internalId: string) => rows.some(x =>
     x.entity_type === 'offramp_order'
@@ -426,6 +452,17 @@ export default function EmissorBlockchain() {
           </button>
         </div>
 
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Consumo confirmado (voucher)</p>
+            <p className="font-heading font-black text-xl mt-2">R$ {brl(confirmedConsumed)}</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">PIX liquidado (off-ramp ativo)</p>
+            <p className="font-heading font-black text-xl mt-2">R$ {brl(settledOfframp)}</p>
+          </div>
+        </div>
+
         {/* Filtros */}
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -459,6 +496,15 @@ export default function EmissorBlockchain() {
               <option value="failed" className="bg-[#0A1530]">Falha</option>
               <option value="pending" className="bg-[#0A1530]">Pendente</option>
             </select>
+            <label className="h-10 px-3 rounded-md bg-[#0A1530] border border-white/10 text-xs text-white/80 inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={hideReversed}
+                onChange={e => setHideReversed(e.target.checked)}
+                className="accent-tikin-orange"
+              />
+              Ocultar estornados
+            </label>
           </div>
         </div>
 
@@ -473,10 +519,11 @@ export default function EmissorBlockchain() {
                 <th className="px-5 py-4 text-right">Valor</th>
                 <th className="px-5 py-4">Hash Stellar</th>
                 <th className="px-5 py-4">Status</th>
+                <th className="px-5 py-4">Status de negócio</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-white/40">Nenhum registro</td></tr>}
+              {pageRows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-white/40">Nenhum registro</td></tr>}
               {pageRows.map(r => (
                 <tr key={r.id} className="border-b border-white/5 last:border-0">
                   <td className="px-5 py-3 text-xs text-white/60">{format(parseISO(r.created_at), 'dd/MM/yy HH:mm:ss')}</td>
@@ -484,6 +531,7 @@ export default function EmissorBlockchain() {
                     <p className="font-semibold">{OP_LABEL[r.operation] || r.operation}</p>
                     <p className="text-[10px] text-white/40">{ENTITY_LABEL[r.entity_type] || r.entity_type}</p>
                     <p className="text-[10px] text-white/50 mt-1 leading-snug">{OP_DESC[r.operation] || 'Operação registrada na blockchain'}</p>
+                    {r.counterparty_label && <p className="text-[10px] text-tikin-orange/90 mt-1 leading-snug">{r.counterparty_label}</p>}
                   </td>
                   <td className="px-5 py-3 text-[10px] font-mono text-white/50">{r.internal_id.slice(0, 8)}…</td>
                   <td className="px-5 py-3 text-right text-xs font-heading font-black">{r.amount ? `R$ ${brl(r.amount)}` : '—'}</td>
@@ -510,6 +558,7 @@ export default function EmissorBlockchain() {
                     {r.status === 'pending' && <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>}
                     {r.status === 'superseded' && <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/60 text-[10px] font-bold">SUPERSEDED</span>}
                   </td>
+                  <td className="px-5 py-3">{businessStatusBadge(r.business_status)}</td>
                 </tr>
               ))}
             </tbody>

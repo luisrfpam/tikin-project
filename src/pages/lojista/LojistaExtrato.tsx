@@ -50,7 +50,9 @@ export default function LojistaExtrato() {
       if (!est) return;
       setMerchantStatus((est as any).status || 'active');
       const { data } = await supabase.from('transactions').select('*')
-        .eq('establishment_id', est.id).order('created_at', { ascending: false });
+        .eq('establishment_id', est.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false });
       const enriched = await enrichBeneficiaryNames((data as Tx[]) ?? []);
       setTransactions(enriched);
       const txIds = enriched.map(t => t.id);

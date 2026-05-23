@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { mockBlockchainSettle, addAuditLog } from '@/lib/supabase-helpers';
 import { registerOnStellar } from '@/lib/stellar';
 import { Check, Loader2, Store, ChevronRight, AlertTriangle, Search, ArrowLeft, Pencil } from 'lucide-react';
-import { categoryLabel } from '@/lib/categories';
+import { categoryLabel, establishmentAcceptsVoucherCategory, resolveAcceptedCategories } from '@/lib/categories';
 import { differenceInDays, format } from 'date-fns';
 import { useIssuerScope, IssuerBadge } from '@/lib/issuerScope';
 
@@ -104,23 +104,24 @@ export default function UsarVoucher() {
 
   const eligibleVouchers = useMemo(() => {
     if (!establishment) return [];
-    const accepted = establishment.accepted_categories ?? [];
+    const accepted = resolveAcceptedCategories(establishment.accepted_categories, establishment.category);
     return vouchers
       .filter(v => Number(v.remaining_value) > 0)
       .filter(notExpired)
       .filter(v => scope.matches(v.issuer_id))
-      .filter(v => accepted.length === 0 || accepted.includes(v.rules?.category))
+      .filter(v => establishmentAcceptsVoucherCategory(accepted, null, v.rules?.category))
       .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
   }, [vouchers, establishment, scope]);
 
   const ineligibleVouchers = useMemo(() => {
     if (!establishment) return [];
-    const accepted = establishment.accepted_categories ?? [];
+    const accepted = resolveAcceptedCategories(establishment.accepted_categories, establishment.category);
     return vouchers
       .filter(v => Number(v.remaining_value) > 0)
       .filter(notExpired)
       .filter(v => scope.matches(v.issuer_id))
-      .filter(v => accepted.length > 0 && !accepted.includes(v.rules?.category));
+      .filter(v => accepted.length > 0)
+      .filter(v => !establishmentAcceptsVoucherCategory(accepted, null, v.rules?.category));
   }, [vouchers, establishment, scope]);
 
   const eligibleTotal = eligibleVouchers.reduce((s, v) => s + Number(v.remaining_value), 0);
@@ -273,8 +274,8 @@ export default function UsarVoucher() {
                   <div className="flex-1 min-w-0">
                     <p className="font-heading font-extrabold text-tikin-navy text-sm truncate">{e.name}</p>
                     <p className="text-[11px] text-tikin-navy/50 truncate">
-                      {(e.accepted_categories ?? []).length > 0
-                        ? (e.accepted_categories ?? []).map(c => categoryLabel(c)).join(' · ')
+                      {resolveAcceptedCategories(e.accepted_categories, e.category).length > 0
+                        ? resolveAcceptedCategories(e.accepted_categories, e.category).map(c => categoryLabel(c)).join(' · ')
                         : 'Aceita todas as categorias'}
                     </p>
                   </div>
@@ -303,7 +304,7 @@ export default function UsarVoucher() {
               <div className="min-w-0">
                 <p className="font-heading font-extrabold text-tikin-navy text-sm truncate">{establishment.name}</p>
                 <p className="text-[11px] text-tikin-navy/50 truncate">
-                  {(establishment.accepted_categories ?? []).map(c => categoryLabel(c)).join(' · ') || 'Aceita todas as categorias'}
+                  {resolveAcceptedCategories(establishment.accepted_categories, establishment.category).map(c => categoryLabel(c)).join(' · ') || 'Aceita todas as categorias'}
                 </p>
               </div>
             </div>

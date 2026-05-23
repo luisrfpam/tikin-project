@@ -122,6 +122,7 @@ export default function EmissorDashboard() {
   const filteredTxs = useMemo(() => txs.filter(t => {
     const d = parseISO(t.created_at);
     if (d < startDate || d > endDate) return false;
+    if (t.status !== 'confirmed') return false;
     if (categoryFilter !== 'all' && t.voucher_category !== categoryFilter) return false;
     return true;
   }), [txs, startDate, endDate, categoryFilter]);

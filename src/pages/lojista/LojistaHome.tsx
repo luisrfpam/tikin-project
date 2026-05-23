@@ -33,8 +33,9 @@ export default function LojistaHome() {
 
       const { data } = await supabase.from('transactions').select('*').eq('establishment_id', est.id).order('created_at', { ascending: false });
       const all = await enrichBeneficiaryNames((data as any[]) ?? []);
-      setTxs(all.slice(0, 8));
-      setTotalReceived(all.filter(t => t.status === 'confirmed').reduce((s, t) => {
+      const confirmed = all.filter(t => t.status === 'confirmed');
+      setTxs(confirmed.slice(0, 8));
+      setTotalReceived(confirmed.reduce((s, t) => {
         const sign = t.tx_type === 'debit' ? -1 : 1;
         return s + sign * Number(t.amount);
       }, 0));

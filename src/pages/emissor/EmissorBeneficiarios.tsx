@@ -541,7 +541,9 @@ function ExtratoModal({ issuerId, beneficiary, onClose }: { issuerId: string; be
     if (voucherIds.length === 0) { setTxs([]); setLoading(false); return; }
     let q = supabase.from('transactions')
       .select('id,amount,created_at,voucher_category,tx_type,status,voucher_id')
-      .in('voucher_id', voucherIds).gte('created_at', sinceISO);
+      .in('voucher_id', voucherIds)
+      .eq('status', 'confirmed')
+      .gte('created_at', sinceISO);
     if (untilISO) q = q.lte('created_at', untilISO);
     const { data: ts } = await q.order('created_at', { ascending: false });
     setTxs((ts as Tx[]) || []);

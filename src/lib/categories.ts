@@ -47,6 +47,50 @@ export function categoryLabel(id: string | null | undefined, list?: VoucherCateg
   return src.find(c => c.id === id)?.label ?? id;
 }
 
+export function normalizeCategory(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  switch (normalized) {
+    case 'transporte':
+    case 'combustivel':
+      return 'mobilidade';
+    case 'farmacia':
+      return 'saude';
+    default:
+      return normalized;
+  }
+}
+
+export function resolveAcceptedCategories(
+  acceptedCategories: string[] | null | undefined,
+  fallbackCategory: string | null | undefined,
+): string[] {
+  const normalizedAccepted = Array.from(
+    new Set((acceptedCategories ?? []).map(normalizeCategory).filter(Boolean)),
+  );
+
+  if (normalizedAccepted.length > 0) return normalizedAccepted;
+
+  const fallback = normalizeCategory(fallbackCategory);
+  return fallback ? [fallback] : [];
+}
+
+export function establishmentAcceptsVoucherCategory(
+  acceptedCategories: string[] | null | undefined,
+  fallbackCategory: string | null | undefined,
+  voucherCategory: string | null | undefined,
+): boolean {
+  const resolvedAccepted = resolveAcceptedCategories(acceptedCategories, fallbackCategory);
+  if (resolvedAccepted.length === 0) return true;
+  const normalizedVoucherCategory = normalizeCategory(voucherCategory);
+  return normalizedVoucherCategory ? resolvedAccepted.includes(normalizedVoucherCategory) : false;
+}
+
 export function useCategories() {
   const [cats, setCats] = useState<VoucherCategory[]>(cache ?? DEFAULT_CATEGORIES);
   useEffect(() => { fetchCategories().then(setCats); }, []);

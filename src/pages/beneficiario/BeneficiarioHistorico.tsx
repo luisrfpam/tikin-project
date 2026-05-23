@@ -82,6 +82,7 @@ export default function BeneficiarioHistorico() {
           .from('transactions')
           .select('id, amount, status, created_at, voucher_id, establishment_id, establishments(name, category)')
           .in('voucher_id', ids)
+          .eq('status', 'confirmed')
           .order('created_at', { ascending: false });
         txData = ts ?? [];
       }

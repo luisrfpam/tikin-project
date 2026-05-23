@@ -334,6 +334,7 @@ export default function EmissorBlockchain() {
       );
       const burnRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_burn');
       const pixRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_pix_paid');
+      const failedOfframpRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_failed');
       const amount = Number(payRow?.amount ?? chargeRow?.amount ?? burnRow?.amount ?? pixRow?.amount ?? 0);
       const startedAt = sortedRows[0]?.created_at;
       const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || chargeRow?.counterparty_label || null;
@@ -343,8 +344,8 @@ export default function EmissorBlockchain() {
         rows: sortedRows,
         chargeRow,
         payRow,
-        burnRow,
-        pixRow,
+        burnRow: burnRow || failedOfframpRow,
+        pixRow: pixRow || failedOfframpRow,
         amount,
         startedAt,
         counterparty,
@@ -356,7 +357,7 @@ export default function EmissorBlockchain() {
     if (status === 'confirmed' || status === 'paid' || status === 'active') {
       return <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">NEGÓCIO OK</span>;
     }
-    if (status === 'reversed') {
+    if (status === 'reversed' || status === 'reversed_charge') {
       return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/70 text-[10px] font-bold">ESTORNADO</span>;
     }
     if (status === 'pending' || status === 'burning' || status === 'burned') {

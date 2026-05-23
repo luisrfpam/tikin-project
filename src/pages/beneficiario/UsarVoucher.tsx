@@ -64,6 +64,30 @@ export default function UsarVoucher() {
   const [finalSlices, setFinalSlices] = useState<Slice[]>([]);
   const [charge, setCharge] = useState<Charge | null>(null);
 
+  const invokeOfframpWithRetry = async (transactionId: string, maxAttempts = 3): Promise<void> => {
+    let lastError = 'erro desconhecido';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const { data, error } = await supabase.functions.invoke('etherfuse-create-offramp', {
+        body: { transaction_id: transactionId },
+      });
+
+      const failed = !!error || (data as any)?.status === 'failed' || !!(data as any)?.error;
+      if (!failed) return;
+
+      lastError =
+        error?.message ||
+        (data as any)?.error ||
+        `tentativa ${attempt} falhou`;
+
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1200 * attempt));
+      }
+    }
+
+    throw new Error(lastError);
+  };
+
   // Load establishments + active vouchers
   useEffect(() => {
     if (!user) return;
@@ -212,11 +236,14 @@ export default function UsarVoucher() {
         if (r.success && r.hash) {
           toast.success(`Pagamento registrado na Stellar (${r.hash.slice(0, 8)}…)`);
         }
-        // Fire-and-forget off-ramp: queima TESOURO da carteira do emissor e
-        // dispara PIX em BRL para a chave default do lojista.
-        supabase.functions.invoke('etherfuse-create-offramp', {
-          body: { transaction_id: txId },
-        }).catch(err => console.error('offramp invoke', err));
+        // Off-ramp with retry: reduces transient failures (e.g. timeouts 504)
+        // and keeps payment/off-ramp lifecycle consistent.
+        try {
+          await invokeOfframpWithRetry(txId, 3);
+        } catch (offrampErr: any) {
+          console.error('offramp invoke', offrampErr);
+          toast.warning(`Pagamento confirmado, mas off-ramp pendente para tx ${txId.slice(0, 8)}…`);
+        }
       }
 
       setStep('success');

@@ -15,19 +15,27 @@ const ETHERFUSE_BASE = "https://api.sand.etherfuse.com";
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const auth = req.headers.get("Authorization");
-    if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
-
     const url = Deno.env.get("SUPABASE_URL")!;
     const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const auth = req.headers.get("Authorization");
+    const internalServiceKey = req.headers.get("x-internal-service-key");
+    const isInternalCall = !!internalServiceKey && internalServiceKey === service;
+    if (!auth && !isInternalCall) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
     const etherfuseKey = Deno.env.get("ETHERFUSE_API_KEY") || "";
-    const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } } });
+    const userClient = createClient(url, anon, { global: { headers: auth ? { Authorization: auth } : {} } });
     const admin = createClient(url, service);
 
-    const { data: { user }, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    let user: { id: string } | null = null;
+    if (!isInternalCall) {
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      }
+      user = { id: userData.user.id };
     }
 
     const { transaction_id } = await req.json() as { transaction_id: string };
@@ -53,19 +61,19 @@ Deno.serve(async (req) => {
       .single();
     if (!voucher) return new Response(JSON.stringify({ error: "Voucher não encontrado" }), { status: 404, headers: corsHeaders });
 
-    const isBeneficiary = !!voucher.beneficiary_id && voucher.beneficiary_id === user.id;
+    const isBeneficiary = !isInternalCall && !!voucher.beneficiary_id && voucher.beneficiary_id === user?.id;
     let isIssuerOwner = false;
-    if (!isBeneficiary) {
+    if (!isInternalCall && !isBeneficiary) {
       const { data: issuerOwner } = await admin
         .from("issuers")
         .select("id")
         .eq("id", voucher.issuer_id)
-        .eq("user_id", user.id)
+        .eq("user_id", user!.id)
         .maybeSingle();
       isIssuerOwner = !!issuerOwner;
     }
 
-    if (!isBeneficiary && !isIssuerOwner) {
+    if (!isInternalCall && !isBeneficiary && !isIssuerOwner) {
       return new Response(JSON.stringify({ error: "Acesso negado" }), { status: 403, headers: corsHeaders });
     }
 
@@ -105,6 +113,17 @@ Deno.serve(async (req) => {
     }
 
     if (!pixKey) {
+      await admin.from("blockchain_transactions").insert({
+        operation: "offramp_failed",
+        amount: Number(tx.amount),
+        stellar_tx_hash: null,
+        stellar_ledger: null,
+        status: "failed",
+        issuer_id: voucher.issuer_id,
+        internal_id: order.id,
+        entity_type: "offramp_order",
+        error: "Lojista não possui chave PIX cadastrada",
+      });
       return new Response(JSON.stringify(order), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -131,6 +150,17 @@ Deno.serve(async (req) => {
       if (!burnRes.ok || !burnJson.success) {
         const errMsg = burnJson.error || `Burn falhou (${burnRes.status})`;
         await admin.from("offramp_orders").update({ status: "failed", error: errMsg }).eq("id", order.id);
+        await admin.from("blockchain_transactions").insert({
+          operation: "offramp_failed",
+          amount: Number(tx.amount),
+          stellar_tx_hash: null,
+          stellar_ledger: null,
+          status: "failed",
+          issuer_id: voucher.issuer_id,
+          internal_id: order.id,
+          entity_type: "offramp_order",
+          error: errMsg,
+        });
         return new Response(JSON.stringify({ ...order, status: "failed", error: errMsg }), { status: 500, headers: corsHeaders });
       }
       burnHash = burnJson.hash;
@@ -138,6 +168,17 @@ Deno.serve(async (req) => {
     } catch (e: any) {
       const errMsg = String(e?.message ?? e);
       await admin.from("offramp_orders").update({ status: "failed", error: errMsg }).eq("id", order.id);
+      await admin.from("blockchain_transactions").insert({
+        operation: "offramp_failed",
+        amount: Number(tx.amount),
+        stellar_tx_hash: null,
+        stellar_ledger: null,
+        status: "failed",
+        issuer_id: voucher.issuer_id,
+        internal_id: order.id,
+        entity_type: "offramp_order",
+        error: errMsg,
+      });
       return new Response(JSON.stringify({ ...order, status: "failed", error: errMsg }), { status: 500, headers: corsHeaders });
     }
 

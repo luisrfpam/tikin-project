@@ -196,20 +196,29 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ razao_social: '', cnpj: '', responsible_name: '', responsible_role: '', corporate_email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const set = (k: string, v: string) => setForm({ ...form, [k]: v });
+
+  const errorClass = 'border-red-500 focus-visible:ring-red-500';
+  const razaoSocialValid = Boolean(form.razao_social.trim());
+  const cnpjValid = isValidCNPJ(form.cnpj);
+  const responsibleNameValid = Boolean(form.responsible_name.trim());
+  const responsibleRoleValid = Boolean(form.responsible_role.trim());
+  const corporateEmail = form.corporate_email.trim().toLowerCase();
+  const corporateEmailValid = isValidEmail(corporateEmail);
+  const passwordValid = form.password.length >= 6;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+    setSubmitAttempted(true);
 
-    const corporateEmail = form.corporate_email.trim().toLowerCase();
-
-    if (!form.razao_social.trim()) return toast.error('Informe a razão social');
-    if (!isValidCNPJ(form.cnpj)) return toast.error(DOC_MESSAGES.cnpjInvalid);
-    if (!form.responsible_name.trim()) return toast.error('Informe o nome do responsável');
-    if (!form.responsible_role.trim()) return toast.error('Informe o cargo');
-    if (!isValidEmail(corporateEmail)) return toast.error('E-mail corporativo inválido');
-    if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+    if (!razaoSocialValid) return toast.error('Informe a razão social');
+    if (!cnpjValid) return toast.error(DOC_MESSAGES.cnpjInvalid);
+    if (!responsibleNameValid) return toast.error('Informe o nome do responsável');
+    if (!responsibleRoleValid) return toast.error('Informe o cargo');
+    if (!corporateEmailValid) return toast.error('E-mail corporativo inválido');
+    if (!passwordValid) return toast.error('Senha deve ter no mínimo 6 caracteres');
 
     setLoading(true);
     try {
@@ -261,14 +270,84 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
       <BackBtn onBack={onBack} />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">CADASTRO DE EMPRESA</h2>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <Input placeholder="Razão Social" required value={form.razao_social} onChange={e => set('razao_social', e.target.value)} />
-        <Input placeholder="CNPJ" required inputMode="numeric" value={form.cnpj} onChange={e => set('cnpj', maskCNPJ(e.target.value))} />
-        <Input placeholder="Nome Completo do Responsável" required value={form.responsible_name} onChange={e => set('responsible_name', e.target.value)} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input placeholder="Cargo" required value={form.responsible_role} onChange={e => set('responsible_role', e.target.value)} />
-          <Input type="email" placeholder="E-mail Corporativo" required value={form.corporate_email} onChange={e => set('corporate_email', e.target.value)} />
+        <div>
+          <Input
+            placeholder="Razão Social"
+            required
+            value={form.razao_social}
+            onChange={e => set('razao_social', e.target.value)}
+            className={submitAttempted && !razaoSocialValid ? errorClass : ''}
+          />
+          {submitAttempted && !razaoSocialValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">Informe a razão social.</p>
+          )}
         </div>
-        <Input type="password" placeholder="Criar Senha de Acesso (mín. 6 caracteres)" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />
+        <div>
+          <Input
+            placeholder="CNPJ"
+            required
+            inputMode="numeric"
+            value={form.cnpj}
+            onChange={e => set('cnpj', maskCNPJ(e.target.value))}
+            className={submitAttempted && !cnpjValid ? errorClass : ''}
+          />
+          {submitAttempted && !cnpjValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">{DOC_MESSAGES.cnpjInvalid}</p>
+          )}
+        </div>
+        <div>
+          <Input
+            placeholder="Nome Completo do Responsável"
+            required
+            value={form.responsible_name}
+            onChange={e => set('responsible_name', e.target.value)}
+            className={submitAttempted && !responsibleNameValid ? errorClass : ''}
+          />
+          {submitAttempted && !responsibleNameValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">Informe o nome do responsável.</p>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Input
+              placeholder="Cargo"
+              required
+              value={form.responsible_role}
+              onChange={e => set('responsible_role', e.target.value)}
+              className={submitAttempted && !responsibleRoleValid ? errorClass : ''}
+            />
+            {submitAttempted && !responsibleRoleValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Informe o cargo.</p>
+            )}
+          </div>
+          <div>
+            <Input
+              type="email"
+              placeholder="E-mail Corporativo"
+              required
+              value={form.corporate_email}
+              onChange={e => set('corporate_email', e.target.value)}
+              className={submitAttempted && !corporateEmailValid ? errorClass : ''}
+            />
+            {submitAttempted && !corporateEmailValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">E-mail corporativo inválido.</p>
+            )}
+          </div>
+        </div>
+        <div>
+          <Input
+            type="password"
+            placeholder="Criar Senha de Acesso (mín. 6 caracteres)"
+            required
+            minLength={6}
+            value={form.password}
+            onChange={e => set('password', e.target.value)}
+            className={submitAttempted && !passwordValid ? errorClass : ''}
+          />
+          {submitAttempted && !passwordValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">Senha deve ter no mínimo 6 caracteres.</p>
+          )}
+        </div>
         <Button type="submit" disabled={loading} className="bg-tikin-navy hover:bg-tikin-navy/90 text-white font-heading font-extrabold py-6 mt-2">
           {loading ? 'Enviando...' : 'Enviar cadastro para análise'}
         </Button>
@@ -281,18 +360,25 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', cpf: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const set = (k: string, v: string) => setForm({ ...form, [k]: v });
+
+  const errorClass = 'border-red-500 focus-visible:ring-red-500';
+  const nameValid = Boolean(form.name.trim());
+  const cpfValid = isValidCPF(form.cpf);
+  const personalEmail = form.email.trim().toLowerCase();
+  const emailValid = isValidEmail(personalEmail);
+  const passwordValid = form.password.length >= 6;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+    setSubmitAttempted(true);
 
-    const personalEmail = form.email.trim().toLowerCase();
-
-    if (!form.name.trim()) return toast.error('Informe seu nome');
-    if (!isValidCPF(form.cpf)) return toast.error(DOC_MESSAGES.cpfInvalid);
-    if (!isValidEmail(personalEmail)) return toast.error('E-mail inválido');
-    if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
+    if (!nameValid) return toast.error('Informe seu nome');
+    if (!cpfValid) return toast.error(DOC_MESSAGES.cpfInvalid);
+    if (!emailValid) return toast.error('E-mail inválido');
+    if (!passwordValid) return toast.error('Senha deve ter no mínimo 6 caracteres');
 
     setLoading(true);
     try {
@@ -322,10 +408,58 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
       <BackBtn onBack={onBack} />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">ATIVAR CONTA BENEFICIÁRIO</h2>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <Input placeholder="Nome Completo" required value={form.name} onChange={e => set('name', e.target.value)} />
-        <Input placeholder="CPF" required inputMode="numeric" value={form.cpf} onChange={e => set('cpf', maskCPF(e.target.value))} />
-        <Input type="email" placeholder="E-mail Pessoal" required value={form.email} onChange={e => set('email', e.target.value)} />
-        <Input type="password" placeholder="Criar Senha (mín. 6 caracteres)" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />
+        <div>
+          <Input
+            placeholder="Nome Completo"
+            required
+            value={form.name}
+            onChange={e => set('name', e.target.value)}
+            className={submitAttempted && !nameValid ? errorClass : ''}
+          />
+          {submitAttempted && !nameValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">Informe seu nome.</p>
+          )}
+        </div>
+        <div>
+          <Input
+            placeholder="CPF"
+            required
+            inputMode="numeric"
+            value={form.cpf}
+            onChange={e => set('cpf', maskCPF(e.target.value))}
+            className={submitAttempted && !cpfValid ? errorClass : ''}
+          />
+          {submitAttempted && !cpfValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">{DOC_MESSAGES.cpfInvalid}</p>
+          )}
+        </div>
+        <div>
+          <Input
+            type="email"
+            placeholder="E-mail Pessoal"
+            required
+            value={form.email}
+            onChange={e => set('email', e.target.value)}
+            className={submitAttempted && !emailValid ? errorClass : ''}
+          />
+          {submitAttempted && !emailValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">E-mail inválido.</p>
+          )}
+        </div>
+        <div>
+          <Input
+            type="password"
+            placeholder="Criar Senha (mín. 6 caracteres)"
+            required
+            minLength={6}
+            value={form.password}
+            onChange={e => set('password', e.target.value)}
+            className={submitAttempted && !passwordValid ? errorClass : ''}
+          />
+          {submitAttempted && !passwordValid && (
+            <p className="mt-1 text-[11px] font-medium text-red-600">Senha deve ter no mínimo 6 caracteres.</p>
+          )}
+        </div>
         <p className="text-sm text-tikin-navy/60 text-center">Sua biometria facial será solicitada no primeiro acesso ao aplicativo.</p>
         <Button type="submit" disabled={loading} className="bg-tikin-navy hover:bg-tikin-navy/90 text-white font-heading font-extrabold py-6">
           {loading ? 'Criando...' : 'Cadastrar e Entrar'}

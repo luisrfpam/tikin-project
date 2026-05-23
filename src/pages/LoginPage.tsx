@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Eye, EyeOff } from 'lucide-react';
 import { maskCPF, maskCNPJ, isValidCPF, isValidCNPJ, isValidEmail, onlyDigits, looksLikeDocument } from '@/lib/validators';
 import { getCanonicalAppOrigin } from '@/lib/appUrl';
 import { DOC_MESSAGES } from '@/lib/documentMessages';
@@ -87,6 +88,7 @@ export default function LoginPage() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const navigate = useNavigate();
@@ -239,6 +241,7 @@ export default function LoginPage() {
     setSubmitAttempted(true);
     const value = identifier.trim();
     if (!value) return toast.error('Informe seu identificador');
+    if (!isIdentifierValid) return toast.error(identifierErrorMessage || 'Identificador inválido');
     if (!password) return toast.error('Informe sua senha');
 
     // Block if locked
@@ -389,7 +392,7 @@ export default function LoginPage() {
             ))}
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} noValidate className="space-y-5">
             <div>
               <label className="block mb-2 text-[11px] font-bold tracking-wider text-tikin-navy font-heading">{cfg.fieldLabel}</label>
               <input
@@ -407,14 +410,24 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="block mb-2 text-[11px] font-bold tracking-wider text-tikin-navy font-heading">SENHA</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus} ${submitAttempted && !password ? errorClass : ''}`}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className={`w-full px-4 py-3.5 pr-11 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus} ${submitAttempted && !password ? errorClass : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-tikin-navy/50 hover:text-tikin-navy"
+                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
               {submitAttempted && !password && (
                 <p className="mt-1 text-[11px] font-medium text-red-600">Informe sua senha.</p>
               )}

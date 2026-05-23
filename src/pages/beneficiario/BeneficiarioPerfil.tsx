@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { categoryLabel } from '@/lib/categories';
 import { voucherStatusLabel, voucherStatusTone } from '@/lib/voucherStatuses';
 import { formatCpf } from '@/lib/utils';
+import { isValidPhone, maskPhone } from '@/lib/validators';
 
 interface Voucher { id: string; remaining_value: number; value: number; rules: any; status: string; expiration_date: string; }
 interface Fav { establishment_id: string; establishments: { name: string; category: string|null; address: string|null }; }
@@ -38,7 +39,7 @@ export default function BeneficiarioPerfil() {
       .eq('beneficiary_id', user.id)
       .then(({ data }: any) => setFavs(data ?? []));
     supabase.from('profiles').select('phone').eq('id', user.id).single().then(({ data }: any) => {
-      if (data?.phone) setPhone(data.phone);
+      if (data?.phone) setPhone(maskPhone(data.phone));
     });
   }, [user]);
 
@@ -52,10 +53,16 @@ export default function BeneficiarioPerfil() {
 
   const savePhone = async () => {
     if (!user) return;
+    if (phone.trim() && !isValidPhone(phone)) {
+      toast.error('Telefone inválido. Informe DDD + número.');
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({ phone }).eq('id', user.id);
+    const normalizedPhone = phone.trim() ? maskPhone(phone) : null;
+    const { error } = await supabase.from('profiles').update({ phone: normalizedPhone }).eq('id', user.id);
     setSaving(false);
     if (error) return toast.error('Erro ao salvar');
+    if (normalizedPhone) setPhone(normalizedPhone);
     toast.success('Telefone atualizado');
   };
 
@@ -108,7 +115,7 @@ export default function BeneficiarioPerfil() {
                 <Phone size={14} /> Telefone
               </label>
               <div className="flex gap-2">
-                <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(11) 99999-9999"
+                <input value={phone} onChange={e => setPhone(maskPhone(e.target.value))} placeholder="(11) 99999-9999"
                   className="flex-1 px-4 py-2.5 rounded-xl border border-tikin-navy/10 bg-[#F7F8FA] text-sm" />
                 <button onClick={savePhone} disabled={saving}
                   className="px-4 bg-tikin-orange text-white rounded-xl text-xs font-extrabold">SALVAR</button>

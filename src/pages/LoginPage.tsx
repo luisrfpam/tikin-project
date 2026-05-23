@@ -228,6 +228,19 @@ export default function LoginPage() {
     throw new Error('Não foi possível reenviar a ativação.');
   };
 
+  const resendActivationViaRecoveryFallback = async (email: string, emailRedirectTo: string) => {
+    const { data, error } = await supabase.functions.invoke('password-recovery-random', {
+      body: { email, redirectTo: emailRedirectTo },
+    });
+
+    if (error) throw error;
+
+    const payload = data as { ok?: boolean; error?: string } | null;
+    if (payload?.ok) return;
+    if (payload?.error) throw new Error(payload.error);
+    throw new Error('Não foi possível enviar um novo link de ativação.');
+  };
+
   const resolveEmailFromIdentifier = async (value: string) => {
     if (value.includes('@')) {
       if (!isValidEmail(value)) {
@@ -280,7 +293,11 @@ export default function LoginPage() {
           email,
         });
         if (fallbackError) {
-          await resendActivationViaEdgeFunction(email, emailRedirectTo);
+          try {
+            await resendActivationViaEdgeFunction(email, emailRedirectTo);
+          } catch {
+            await resendActivationViaRecoveryFallback(email, emailRedirectTo);
+          }
         }
       }
 
@@ -348,12 +365,27 @@ export default function LoginPage() {
     } else {
       const userId = signInData.user?.id;
       if (role === 'beneficiario' || role === 'lojista') {
-        const { data: rolesData, error: rolesError } = await supabase
+        let { data: rolesData, error: rolesError } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', userId || '');
 
-        const hasActiveRole = !rolesError && Boolean(rolesData?.length);
+        let hasActiveRole = !rolesError && Boolean(rolesData?.length);
+
+        // Self-heal legacy accounts that are email-confirmed in auth but missing role bootstrap.
+        if (!hasActiveRole) {
+          const { data: activationData, error: activationError } = await (supabase as any)['rpc']('activate_pending_signup');
+          if (!activationError && Boolean((activationData as any)?.activated)) {
+            const retryRoles = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', userId || '');
+            rolesData = retryRoles.data;
+            rolesError = retryRoles.error;
+            hasActiveRole = !rolesError && Boolean(rolesData?.length);
+          }
+        }
+
         if (!hasActiveRole) {
           await supabase.auth.signOut();
           toast.error('Seu cadastro ainda não está ativo. Aguarde a liberação ou solicite um novo link de ativação.');

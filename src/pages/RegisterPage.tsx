@@ -482,7 +482,6 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
             <p className="mt-1 text-[11px] font-medium text-red-600">Senha deve ter no mínimo 6 caracteres.</p>
           )}
         </div>
-        <p className="text-sm text-tikin-navy/60 text-center">Sua biometria facial será solicitada no primeiro acesso ao aplicativo.</p>
         <Button type="submit" disabled={loading} className="bg-tikin-navy hover:bg-tikin-navy/90 text-white font-heading font-extrabold py-6">
           {loading ? 'Criando...' : 'Cadastrar e Entrar'}
         </Button>

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Plus, Trash2, Star, KeyRound, Loader2 } from 'lucide-react';
+import { isValidCPF, isValidCNPJ, onlyDigits } from '@/lib/validators';
+import { DOC_MESSAGES } from '@/lib/documentMessages';
 
 type KeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 interface PixKey {
@@ -39,11 +41,12 @@ function maskKey(type: KeyType, value: string) {
 
 function validate(type: KeyType, value: string): string | null {
   const v = value.trim();
+  const digits = onlyDigits(v);
   if (!v) return 'Informe o valor da chave';
-  if (type === 'cpf' && v.replace(/\D/g,'').length !== 11) return 'CPF inválido';
-  if (type === 'cnpj' && v.replace(/\D/g,'').length !== 14) return 'CNPJ inválido';
+  if (type === 'cpf' && (digits.length !== 11 || !isValidCPF(digits))) return DOC_MESSAGES.cpfInvalid;
+  if (type === 'cnpj' && (digits.length !== 14 || !isValidCNPJ(digits))) return DOC_MESSAGES.cnpjInvalid;
   if (type === 'email' && !/^\S+@\S+\.\S+$/.test(v)) return 'E-mail inválido';
-  if (type === 'phone' && v.replace(/\D/g,'').length < 10) return 'Telefone inválido';
+  if (type === 'phone' && digits.length < 10) return 'Telefone inválido';
   if (type === 'random' && v.length < 8) return 'Chave aleatória muito curta';
   return null;
 }

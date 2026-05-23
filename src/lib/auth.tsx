@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeRole, setActiveRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<AuthContextType['profile']>(null);
+
   const fetchRolesAndProfile = async (userId: string) => {
     const [rolesRes, profileRes] = await Promise.all([
       supabase.from('user_roles').select('role').eq('user_id', userId),
@@ -56,9 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (rolesRes.data) {
       const userRoles = rolesRes.data.map(r => r.role as AppRole);
       setRoles(userRoles);
-      if (!activeRole && userRoles.length > 0) {
-        setActiveRole(userRoles[0]);
-      }
+      setActiveRole(currentRole => {
+        if (currentRole && userRoles.includes(currentRole)) {
+          return currentRole;
+        }
+        return userRoles[0] ?? null;
+      });
     }
     if (profileRes.data) {
       setProfile(profileRes.data);
@@ -107,6 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUserId = nextId;
         setUser(nextUser);
         if (nextUser && fetchProfile) {
+          setRoles([]);
+          setActiveRole(null);
+          setProfile(null);
           setTimeout(() => fetchRolesAndProfile(nextUser.id), 0);
         } else if (!nextUser) {
           setRoles([]);

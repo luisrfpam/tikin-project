@@ -7,13 +7,17 @@ import { getCanonicalAppOrigin } from '@/lib/appUrl';
 
 export default function RecuperarSenha() {
   const [email, setEmail] = useState('');
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const errorClass = 'border-red-500 focus:border-red-500';
+  const normalizedEmail = email.trim().toLowerCase();
+  const isEmailFieldValid = isValidEmail(normalizedEmail);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValidEmail(email)) return toast.error('E-mail inválido');
-    const normalizedEmail = email.trim().toLowerCase();
+    setSubmitAttempted(true);
+    if (!isEmailFieldValid) return toast.error('E-mail inválido');
 
     setLoading(true);
 
@@ -76,8 +80,11 @@ export default function RecuperarSenha() {
                   <input
                     type="email" required value={email} onChange={e => setEmail(e.target.value)}
                     placeholder="seu@email.com"
-                    className="w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none focus:border-tikin-navy"
+                    className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none focus:border-tikin-navy ${submitAttempted && !isEmailFieldValid ? errorClass : ''}`}
                   />
+                  {submitAttempted && !isEmailFieldValid && (
+                    <p className="mt-1 text-[11px] font-medium text-red-600">E-mail inválido.</p>
+                  )}
                 </div>
                 <button type="submit" disabled={loading}
                   className="w-full py-4 rounded-xl bg-tikin-navy hover:bg-tikin-navy/90 text-white font-heading font-extrabold tracking-wider text-sm disabled:opacity-60">

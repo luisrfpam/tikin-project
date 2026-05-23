@@ -5,7 +5,7 @@ import Landing from './site/Landing';
 import RoleRouter from './RoleRouter';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { session, user, loading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,6 +25,13 @@ export default function Index() {
   }, [navigate]);
 
   if (loading) return null;
+  if (session && !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-tikin-orange border-t-transparent" />
+      </div>
+    );
+  }
   if (user) return <RoleRouter />;
   return <Landing />;
 }

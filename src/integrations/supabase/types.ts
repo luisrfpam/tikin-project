@@ -1029,7 +1029,10 @@ export type Database = {
         Returns: string
       }
       lookup_email_by_identifier: {
-        Args: { _identifier: string }
+        Args: {
+          _expected_role?: Database["public"]["Enums"]["app_role"] | null
+          _identifier: string
+        }
         Returns: string
       }
       normalize_category: { Args: { _raw: string }; Returns: string }

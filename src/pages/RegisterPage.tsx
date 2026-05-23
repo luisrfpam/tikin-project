@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { maskCPF, maskCNPJ, maskCEP, isValidCPF, isValidCNPJ, isValidCEP, isValidEmail } from '@/lib/validators';
 import { useCategories } from '@/lib/categories';
 import { getCanonicalAppOrigin } from '@/lib/appUrl';
+import { DOC_MESSAGES } from '@/lib/documentMessages';
 
 type Profile = 'empresa' | 'beneficiario' | 'lojista' | null;
 
@@ -150,11 +151,15 @@ async function signupCommon(email: string, password: string, metadata: SignupMet
   // Se não houver sessão ativa após signup, o projeto exige confirmação por e-mail.
   // Tentamos reenvio explícito para reduzir casos em que o usuário não recebe a primeira mensagem.
   if (!result.error && result.data.user && !result.data.session) {
-    await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo },
-    });
+    try {
+      await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo },
+      });
+    } catch (resendError) {
+      console.warn('Falha ao reenviar email de signup', resendError);
+    }
   }
 
   return result;
@@ -200,7 +205,7 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
     const corporateEmail = form.corporate_email.trim().toLowerCase();
 
     if (!form.razao_social.trim()) return toast.error('Informe a razão social');
-    if (!isValidCNPJ(form.cnpj)) return toast.error('CNPJ inválido');
+    if (!isValidCNPJ(form.cnpj)) return toast.error(DOC_MESSAGES.cnpjInvalid);
     if (!form.responsible_name.trim()) return toast.error('Informe o nome do responsável');
     if (!form.responsible_role.trim()) return toast.error('Informe o cargo');
     if (!isValidEmail(corporateEmail)) return toast.error('E-mail corporativo inválido');
@@ -242,8 +247,13 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
       }
     }
     toast.success('Cadastro enviado! O time da TIKiN analisará e liberará seu acesso.');
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutError) {
+        console.error('signOut after empresa signup', signOutError);
+      }
     setLoading(false);
-    navigate('/emissor/aguardando-aprovacao');
+      navigate('/emissor/aguardando-aprovacao', { replace: true });
   };
 
   return (
@@ -280,7 +290,7 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
     const personalEmail = form.email.trim().toLowerCase();
 
     if (!form.name.trim()) return toast.error('Informe seu nome');
-    if (!isValidCPF(form.cpf)) return toast.error('CPF inválido');
+    if (!isValidCPF(form.cpf)) return toast.error(DOC_MESSAGES.cpfInvalid);
     if (!isValidEmail(personalEmail)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
 
@@ -298,8 +308,13 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
     });
     if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
+    try {
+      await supabase.auth.signOut();
+    } catch (signOutError) {
+      console.error('signOut after beneficiary signup', signOutError);
+    }
     setLoading(false);
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -330,11 +345,48 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
   });
   const [loading, setLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
+  const [cepValidated, setCepValidated] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const errorClass = 'border-red-500 focus-visible:ring-red-500';
+  const tradeNameValid = Boolean(form.trade_name.trim());
+  const razaoSocialValid = Boolean(form.razao_social.trim());
+  const cnpjDigits = form.cnpj.replace(/\D/g, '');
+  const cnpjValid = cnpjDigits.length === 14 && isValidCNPJ(form.cnpj);
+  const categorySelected = form.category.trim();
+  const isCategoryValid = categorySelected.length > 0 && cats.some(c => c.id === categorySelected);
+  const hasCepDigits = form.cep.replace(/\D/g, '').length > 0;
+  const cepBasicValid = isValidCEP(form.cep);
+  const logradouroValid = Boolean(form.logradouro.trim());
+  const numeroValid = Boolean(form.numero.trim());
+  const bairroValid = Boolean(form.bairro.trim());
+  const cidadeValid = Boolean(form.cidade.trim());
+  const ufValid = Boolean(form.uf.trim());
+  const normalizedEmail = form.email.trim().toLowerCase();
+  const emailValid = isValidEmail(normalizedEmail);
+  const passwordValid = form.password.length >= 6;
+  const isCepReady =
+    cepBasicValid &&
+    cepValidated &&
+    !cepLoading &&
+    logradouroValid &&
+    bairroValid &&
+    cidadeValid &&
+    ufValid;
 
   const handleCepChange = async (raw: string) => {
     const masked = maskCEP(raw);
-    setForm(f => ({ ...f, cep: masked }));
+    setCepValidated(false);
+    setForm(f => ({
+      ...f,
+      cep: masked,
+      logradouro: '',
+      bairro: '',
+      cidade: '',
+      uf: '',
+    }));
+
     const digits = masked.replace(/\D/g, '');
     if (digits.length === 8) {
       setCepLoading(true);
@@ -344,6 +396,18 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
         if (data.erro) {
           toast.error('CEP não encontrado');
         } else {
+          const hasRequiredAddress = Boolean(
+            data.logradouro?.trim() &&
+            data.bairro?.trim() &&
+            data.localidade?.trim() &&
+            data.uf?.trim()
+          );
+
+          if (!hasRequiredAddress) {
+            toast.error('CEP incompleto. Informe um CEP que retorne endereço completo.');
+            return;
+          }
+
           setForm(f => ({
             ...f,
             logradouro: data.logradouro || '',
@@ -351,6 +415,7 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
             cidade: data.localidade || '',
             uf: data.uf || '',
           }));
+          setCepValidated(true);
         }
       } catch {
         toast.error('Falha ao buscar CEP');
@@ -363,20 +428,24 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
-
-    const contactEmail = form.email.trim().toLowerCase();
+    setSubmitAttempted(true);
 
     if (!form.trade_name.trim()) return toast.error('Informe o nome fantasia');
     if (!form.razao_social.trim()) return toast.error('Informe a razão social');
-    if (!isValidCNPJ(form.cnpj)) return toast.error('CNPJ inválido');
-    if (!form.category) return toast.error('Selecione uma categoria');
+    if (!isValidCNPJ(form.cnpj)) return toast.error(DOC_MESSAGES.cnpjInvalid);
+    if (!categorySelected) return toast.error('Selecione a regra de uso (categoria principal).');
+    if (!cats.some(c => c.id === categorySelected)) return toast.error('Selecione uma regra de uso válida.');
+
     if (!isValidCEP(form.cep)) return toast.error('CEP inválido');
-    if (!form.logradouro.trim()) return toast.error('Informe o logradouro');
+    if (cepLoading) return toast.error('Aguarde a validação do CEP.');
+    if (!cepValidated) return toast.error('Informe um CEP válido que preencha o endereço automaticamente.');
+
+    if (!form.logradouro.trim()) return toast.error('Informe um CEP válido que preencha o logradouro.');
     if (!form.numero.trim()) return toast.error('Informe o número');
-    if (!form.bairro.trim()) return toast.error('Informe o bairro');
-    if (!form.cidade.trim()) return toast.error('Informe a cidade');
-    if (!form.uf.trim()) return toast.error('Informe a UF');
-    if (!isValidEmail(contactEmail)) return toast.error('E-mail inválido');
+    if (!form.bairro.trim()) return toast.error('Informe um CEP válido que preencha o bairro.');
+    if (!form.cidade.trim()) return toast.error('Informe um CEP válido que preencha a cidade.');
+    if (!form.uf.trim()) return toast.error('Informe um CEP válido que preencha a UF.');
+    if (!isValidEmail(normalizedEmail)) return toast.error('E-mail inválido');
     if (form.password.length < 6) return toast.error('Senha deve ter no mínimo 6 caracteres');
     const fullAddress = `${form.logradouro}, ${form.numero}${form.complemento ? ' - ' + form.complemento : ''} - ${form.bairro}, ${form.cidade}/${form.uf}`;
 
@@ -387,13 +456,13 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
       setLoading(false);
       return toast.error(e?.message || 'CNPJ já cadastrado.');
     }
-    const { data, error } = await signupCommon(contactEmail, form.password, {
+    const { data, error } = await signupCommon(normalizedEmail, form.password, {
       name: form.trade_name,
       role: 'lojista',
       cnpj: form.cnpj,
       trade_name: form.trade_name,
       company_name: form.razao_social,
-      category: form.category,
+      category: categorySelected,
       cep: form.cep,
       logradouro: form.logradouro,
       numero: form.numero,
@@ -402,12 +471,17 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
       cidade: form.cidade,
       uf: form.uf,
       address: fullAddress,
-      contact_email: contactEmail,
+      contact_email: normalizedEmail,
     });
     if (error) { toast.error(getSignupErrorMessage(error.message)); setLoading(false); return; }
     toast.success('Conta criada! Verifique seu e-mail para confirmar.');
+    try {
+      await supabase.auth.signOut();
+    } catch (signOutError) {
+      console.error('signOut after merchant signup', signOutError);
+    }
     setLoading(false);
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -415,38 +489,126 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
       <BackBtn onBack={onBack} color="orange" />
       <h2 className="font-heading text-2xl font-black text-tikin-navy mb-6">CREDENCIAR ESTABELECIMENTO</h2>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Input placeholder="Nome Fantasia" required value={form.trade_name} onChange={e => set('trade_name', e.target.value)} />
+        <Input
+          placeholder="Nome Fantasia"
+          required
+          value={form.trade_name}
+          onChange={e => set('trade_name', e.target.value)}
+          className={submitAttempted && !tradeNameValid ? errorClass : ''}
+        />
+        {submitAttempted && !tradeNameValid && (
+          <p className="-mt-2 text-[11px] font-medium text-red-600">Informe o nome fantasia.</p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input placeholder="Razão Social" required value={form.razao_social} onChange={e => set('razao_social', e.target.value)} />
-          <Input placeholder="CNPJ" required inputMode="numeric" value={form.cnpj} onChange={e => set('cnpj', maskCNPJ(e.target.value))} />
+          <div>
+            <Input
+              placeholder="Razão Social"
+              required
+              value={form.razao_social}
+              onChange={e => set('razao_social', e.target.value)}
+              className={submitAttempted && !razaoSocialValid ? errorClass : ''}
+            />
+            {submitAttempted && !razaoSocialValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Informe a razão social.</p>
+            )}
+          </div>
+          <div>
+            <Input
+              placeholder="CNPJ"
+              required
+              inputMode="numeric"
+              value={form.cnpj}
+              onChange={e => set('cnpj', maskCNPJ(e.target.value))}
+              className={submitAttempted && !cnpjValid ? errorClass : ''}
+            />
+            {submitAttempted && !cnpjValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">{DOC_MESSAGES.cnpjInvalid}</p>
+            )}
+          </div>
         </div>
         <Select value={form.category} onValueChange={v => set('category', v)}>
-          <SelectTrigger><SelectValue placeholder="Categoria Principal (Regra de Uso)" /></SelectTrigger>
+          <SelectTrigger className={submitAttempted && !isCategoryValid ? errorClass : ''}>
+            <SelectValue placeholder="Categoria Principal (Regra de Uso)" />
+          </SelectTrigger>
           <SelectContent>
             {cats.map(c => (
               <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {submitAttempted && !isCategoryValid && (
+          <p className="-mt-2 text-[11px] font-medium text-red-600">Selecione a regra de uso (categoria principal).</p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input placeholder={cepLoading ? 'Buscando CEP...' : 'CEP'} required inputMode="numeric" value={form.cep} onChange={e => handleCepChange(e.target.value)} />
-          <Input placeholder="Logradouro (Rua/Av.)" required className="md:col-span-2" value={form.logradouro} onChange={e => set('logradouro', e.target.value)} />
+          <div>
+            <Input
+              placeholder={cepLoading ? 'Buscando CEP...' : 'CEP'}
+              required
+              inputMode="numeric"
+              value={form.cep}
+              onChange={e => handleCepChange(e.target.value)}
+              className={submitAttempted && (!cepBasicValid || !isCepReady) ? errorClass : ''}
+            />
+            {submitAttempted && !cepBasicValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">CEP inválido.</p>
+            )}
+          </div>
+          <div className="md:col-span-2">
+            <Input
+              placeholder="Logradouro (Rua/Av.)"
+              required
+              value={form.logradouro}
+              readOnly
+              className={submitAttempted && !logradouroValid ? errorClass : ''}
+            />
+            {submitAttempted && !logradouroValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Logradouro não preenchido pelo CEP.</p>
+            )}
+          </div>
         </div>
+        {submitAttempted && hasCepDigits && !isCepReady && (
+          <p className="-mt-2 text-[11px] font-medium text-red-600">Informe um CEP válido que preencha logradouro, bairro, cidade e UF automaticamente.</p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input placeholder="Número" required value={form.numero} onChange={e => set('numero', e.target.value)} />
+          <div>
+            <Input
+              placeholder="Número"
+              required
+              value={form.numero}
+              onChange={e => set('numero', e.target.value)}
+              className={submitAttempted && !numeroValid ? errorClass : ''}
+            />
+            {submitAttempted && !numeroValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Informe o número.</p>
+            )}
+          </div>
           <Input placeholder="Complemento (opcional)" className="md:col-span-2" value={form.complemento} onChange={e => set('complemento', e.target.value)} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Input placeholder="Bairro" required className="md:col-span-2" value={form.bairro} onChange={e => set('bairro', e.target.value)} />
+          <div className="md:col-span-2">
+            <Input
+              placeholder="Bairro"
+              required
+              value={form.bairro}
+              readOnly
+              className={submitAttempted && !bairroValid ? errorClass : ''}
+            />
+            {submitAttempted && !bairroValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Bairro não preenchido pelo CEP.</p>
+            )}
+          </div>
           <div className="relative">
             <Input
               placeholder="Cidade"
               required
               value={form.cidade}
               readOnly
-              className="bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed"
+              className={`bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed ${submitAttempted && !cidadeValid ? errorClass : ''}`}
             />
             <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-tikin-navy/45 pointer-events-none" />
+            {submitAttempted && !cidadeValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Cidade não preenchida pelo CEP.</p>
+            )}
           </div>
           <div className="relative">
             <Input
@@ -455,15 +617,43 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
               maxLength={2}
               value={form.uf}
               readOnly
-              className="bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed"
+              className={`bg-[#F5F7FB] border-dashed border-tikin-navy/25 pr-9 text-tikin-navy/70 cursor-not-allowed ${submitAttempted && !ufValid ? errorClass : ''}`}
             />
             <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-tikin-navy/45 pointer-events-none" />
+            {submitAttempted && !ufValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">UF não preenchida pelo CEP.</p>
+            )}
           </div>
         </div>
         <p className="-mt-2 text-[11px] font-medium text-tikin-navy/55">Cidade e UF são preenchidos automaticamente a partir do CEP.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input type="email" placeholder="E-mail de Contato" required value={form.email} onChange={e => set('email', e.target.value)} />
-          <Input type="password" placeholder="Criar Senha (mín. 6 caracteres)" required minLength={6} value={form.password} onChange={e => set('password', e.target.value)} />
+          <div>
+            <Input
+              type="email"
+              placeholder="E-mail de Contato"
+              required
+              value={form.email}
+              onChange={e => set('email', e.target.value)}
+              className={submitAttempted && !emailValid ? errorClass : ''}
+            />
+            {submitAttempted && !emailValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">E-mail inválido.</p>
+            )}
+          </div>
+          <div>
+            <Input
+              type="password"
+              placeholder="Criar Senha (mín. 6 caracteres)"
+              required
+              minLength={6}
+              value={form.password}
+              onChange={e => set('password', e.target.value)}
+              className={submitAttempted && !passwordValid ? errorClass : ''}
+            />
+            {submitAttempted && !passwordValid && (
+              <p className="mt-1 text-[11px] font-medium text-red-600">Senha deve ter no mínimo 6 caracteres.</p>
+            )}
+          </div>
         </div>
         <Button type="submit" disabled={loading} className="bg-tikin-orange hover:bg-tikin-orange/90 text-white font-heading font-extrabold py-6 mt-2">
           {loading ? 'Criando...' : 'Finalizar Credenciamento'}

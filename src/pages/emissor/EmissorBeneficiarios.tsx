@@ -13,6 +13,7 @@ import { useCategories, categoryLabel } from '@/lib/categories';
 import { useVoucherStatuses, voucherStatusLabel, voucherStatusTone, toneBadgeClass } from '@/lib/voucherStatuses';
 import { registerOnStellar } from '@/lib/stellar';
 import { StellarHashLink } from '@/components/StellarHashLink';
+import { DOC_MESSAGES } from '@/lib/documentMessages';
 
 interface IssuerRow { id: string; company_name: string; }
 interface BenefRow { id: string; name: string; cpf_masked: string; status: 'active' | 'inactive'; }
@@ -249,7 +250,7 @@ function NovoBeneficiarioModal({ issuerId, onClose, onDone }: { issuerId: string
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || name.trim().length < 3) return toast.error('Nome inválido');
-    if (!isValidCpf(cpf)) return toast.error('CPF inválido');
+    if (!isValidCpf(cpf)) return toast.error(DOC_MESSAGES.cpfInvalid);
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('create-beneficiary', { body: { name: name.trim(), cpf: onlyDigits(cpf), email: email.trim().toLowerCase() } });
@@ -366,7 +367,7 @@ function AddSaldoModal({
 
   useEffect(() => {
     const digits = onlyDigits(cpf);
-    if (digits.length !== 11) { setBenefName(''); setLookupState('idle'); return; }
+    if (digits.length !== 11 || !isValidCpf(digits)) { setBenefName(''); setLookupState('idle'); return; }
     let cancelled = false;
     setLookupState('loading');
     (async () => {
@@ -380,7 +381,9 @@ function AddSaldoModal({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (onlyDigits(cpf).length !== 11) return toast.error('Informe um CPF com 11 dígitos');
+    const cpfDigits = onlyDigits(cpf);
+    if (cpfDigits.length !== 11) return toast.error(DOC_MESSAGES.cpfLength);
+    if (!isValidCpf(cpfDigits)) return toast.error(DOC_MESSAGES.cpfInvalid);
     if (lookupState !== 'found') return toast.error('Beneficiário não cadastrado. Cadastre antes em "Novo Beneficiário".');
     const val = parseBRLInput(value);
     if (!(val > 0)) return toast.error('Valor inválido');
@@ -395,7 +398,7 @@ function AddSaldoModal({
 
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('add-voucher-to-beneficiary', {
-      body: { cpf: onlyDigits(cpf), value: val, category, expiration_date: expDate },
+      body: { cpf: cpfDigits, value: val, category, expiration_date: expDate },
     });
     if (error || (data as any)?.error) {
       let message = (data as any)?.error || error?.message || 'Erro';

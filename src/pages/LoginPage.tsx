@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { maskCPF, maskCNPJ, isValidCPF, isValidCNPJ, isValidEmail, onlyDigits, looksLikeDocument } from '@/lib/validators';
 import { getCanonicalAppOrigin } from '@/lib/appUrl';
+import { DOC_MESSAGES } from '@/lib/documentMessages';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 3 * 60 * 1000;
@@ -83,12 +84,14 @@ export default function LoginPage() {
   const [role, setRole] = useState<Role>('beneficiario');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const navigate = useNavigate();
   const cfg = ROLE_CONFIG[role];
+  const errorClass = 'border-red-500 focus:border-red-500';
 
   useEffect(() => {
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
@@ -134,6 +137,29 @@ export default function LoginPage() {
 
 
   const isDoc = looksLikeDocument(identifier) && !identifier.includes('@');
+  const trimmedIdentifier = identifier.trim();
+  const identifierDigits = onlyDigits(trimmedIdentifier);
+  const isEmailIdentifier = trimmedIdentifier.includes('@');
+  const isIdentifierValid =
+    trimmedIdentifier.length > 0 &&
+    (isEmailIdentifier
+      ? isValidEmail(trimmedIdentifier)
+      : role === 'beneficiario'
+        ? identifierDigits.length === 11 && isValidCPF(identifierDigits)
+        : identifierDigits.length === 14 && isValidCNPJ(identifierDigits));
+  const identifierErrorMessage = !trimmedIdentifier
+    ? 'Informe seu identificador.'
+    : isEmailIdentifier && !isValidEmail(trimmedIdentifier)
+      ? 'E-mail inválido.'
+      : role === 'beneficiario' && identifierDigits.length !== 11
+        ? DOC_MESSAGES.cpfLength
+        : role === 'beneficiario' && !isValidCPF(identifierDigits)
+          ? DOC_MESSAGES.cpfInvalid
+          : role !== 'beneficiario' && identifierDigits.length !== 14
+            ? DOC_MESSAGES.cnpjLength
+            : role !== 'beneficiario' && !isValidCNPJ(identifierDigits)
+              ? DOC_MESSAGES.cnpjInvalid
+              : null;
 
   const handleIdentifierChange = (raw: string) => {
     if (looksLikeDocument(raw) && !raw.includes('@')) {
@@ -153,15 +179,24 @@ export default function LoginPage() {
 
     const digits = onlyDigits(value);
     if (role === 'beneficiario' && digits.length !== 11) {
-      throw new Error('CPF deve ter 11 dígitos');
+      throw new Error(DOC_MESSAGES.cpfLength);
+    }
+    if (role === 'beneficiario' && !isValidCPF(digits)) {
+      throw new Error(DOC_MESSAGES.cpfInvalid);
     }
     if (role !== 'beneficiario' && digits.length !== 14) {
-      throw new Error('CNPJ deve ter 14 dígitos');
+      throw new Error(DOC_MESSAGES.cnpjLength);
+    }
+    if (role !== 'beneficiario' && !isValidCNPJ(digits)) {
+      throw new Error(DOC_MESSAGES.cnpjInvalid);
     }
 
-    const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: digits });
+    const { data, error } = await supabase.rpc('lookup_email_by_identifier', {
+      _identifier: digits,
+      _expected_role: role,
+    });
     if (error || !data) {
-      throw new Error('Não foi possível localizar um cadastro para esse identificador');
+      throw new Error(DOC_MESSAGES.identifierNotFoundForRole);
     }
 
     return data;
@@ -201,6 +236,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitAttempted(true);
     const value = identifier.trim();
     if (!value) return toast.error('Informe seu identificador');
     if (!password) return toast.error('Informe sua senha');
@@ -216,18 +252,23 @@ export default function LoginPage() {
     let email = value;
     if (!value.includes('@')) {
       const digits = onlyDigits(value);
-      if (role === 'beneficiario' && digits.length !== 11) return toast.error('CPF deve ter 11 dígitos');
-      if (role !== 'beneficiario' && digits.length !== 14) return toast.error('CNPJ deve ter 14 dígitos');
+      if (role === 'beneficiario' && digits.length !== 11) return toast.error(DOC_MESSAGES.cpfLength);
+      if (role === 'beneficiario' && !isValidCPF(digits)) return toast.error(DOC_MESSAGES.cpfInvalid);
+      if (role !== 'beneficiario' && digits.length !== 14) return toast.error(DOC_MESSAGES.cnpjLength);
+      if (role !== 'beneficiario' && !isValidCNPJ(digits)) return toast.error(DOC_MESSAGES.cnpjInvalid);
     } else if (!isValidEmail(value)) {
       return toast.error('E-mail inválido');
     }
 
     setLoading(true);
     if (!value.includes('@')) {
-      const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: onlyDigits(value) });
+      const { data, error } = await supabase.rpc('lookup_email_by_identifier', {
+        _identifier: onlyDigits(value),
+        _expected_role: role,
+      });
       if (error || !data) {
         setLoading(false);
-        registerFailure();
+        toast.error(DOC_MESSAGES.identifierNotFoundForRole);
         return;
       }
       email = data;
@@ -263,6 +304,18 @@ export default function LoginPage() {
       }
 
       if (role === 'emissor') {
+        const { data: issuerProfile } = await supabase
+          .from('issuers')
+          .select('id')
+          .eq('user_id', userId || '')
+          .maybeSingle();
+
+        if (!issuerProfile) {
+          await supabase.auth.signOut();
+          toast.error(DOC_MESSAGES.identifierNotFoundForRole);
+          return;
+        }
+
         const { data: enabledData, error: enabledError } = await supabase.rpc('is_current_issuer_enabled');
         if (enabledError || !enabledData) {
           await supabase.auth.signOut();
@@ -346,8 +399,11 @@ export default function LoginPage() {
                 value={identifier}
                 onChange={e => handleIdentifierChange(e.target.value)}
                 placeholder={cfg.placeholder}
-                className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus}`}
+                className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus} ${submitAttempted && !isIdentifierValid ? errorClass : ''}`}
               />
+              {submitAttempted && !isIdentifierValid && (
+                <p className="mt-1 text-[11px] font-medium text-red-600">{identifierErrorMessage}</p>
+              )}
             </div>
             <div>
               <label className="block mb-2 text-[11px] font-bold tracking-wider text-tikin-navy font-heading">SENHA</label>
@@ -357,8 +413,11 @@ export default function LoginPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus}`}
+                className={`w-full px-4 py-3.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-tikin-navy text-sm outline-none transition ${cfg.ringFocus} ${submitAttempted && !password ? errorClass : ''}`}
               />
+              {submitAttempted && !password && (
+                <p className="mt-1 text-[11px] font-medium text-red-600">Informe sua senha.</p>
+              )}
             </div>
 
 

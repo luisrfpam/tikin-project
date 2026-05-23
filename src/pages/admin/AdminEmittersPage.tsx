@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { formatCnpj, onlyDigits } from '@/lib/utils';
 import { isValidCNPJ, maskCNPJ } from '@/lib/validators';
+import { DOC_MESSAGES } from '@/lib/documentMessages';
 
 interface AdminIssuer {
   id: string;
@@ -124,7 +125,7 @@ export default function AdminEmittersPage() {
     const cnpjDigits = onlyDigits(form.cnpj);
     if (cnpjDigits.length !== 14 || !isValidCNPJ(cnpjDigits)) {
       setFormAttempted(true);
-      toast.error('Informe um CNPJ válido.');
+      toast.error(DOC_MESSAGES.cnpjInvalid);
       return;
     }
 

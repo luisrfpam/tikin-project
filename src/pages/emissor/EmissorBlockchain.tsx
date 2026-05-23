@@ -562,7 +562,7 @@ export default function EmissorBlockchain() {
           <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-tikin-orange font-black">Ciclo auditável por transação</p>
-              <p className="text-xs text-white/50 mt-0.5">Cobrança -> Uso de voucher -> Off-ramp burn -> PIX pago</p>
+                <p className="text-xs text-white/50 mt-0.5">Cobrança -&gt; Uso de voucher -&gt; Off-ramp burn -&gt; PIX pago</p>
             </div>
             <span className="text-[10px] text-white/40">{cycleGroups.length} ciclos</span>
           </div>

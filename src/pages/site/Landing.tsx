@@ -8,7 +8,7 @@ export default function Landing() {
       {/* HERO */}
       <header
         className="relative min-h-[600px] bg-cover bg-center"
-        style={{ backgroundImage: "url('/heronew.png')" }}
+        style={{ backgroundImage: "url('/heronew.webp')" }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-tikin-navy/85 via-tikin-navy/60 to-transparent" />
         <div className="container-tikin relative z-10 flex min-h-[600px] flex-col justify-center py-20">
@@ -49,15 +49,23 @@ export default function Landing() {
           </p>
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              { tag: "RH E GESTORES", title: "Distribuir benefícios não deveria dar trabalho.", img: "/problema_rh_taxas.png" },
-              { tag: "COLABORADORES", title: "O saldo deveria ser claro e fácil de usar.", img: "/problema_colaborador.png" },
-              { tag: "LOJISTAS", title: "Receber não pode levar dias e taxas escondidas.", img: "/problema_lojista.png" },
+              { tag: "RH E GESTORES", title: "Distribuir benefícios não deveria dar trabalho.", img: "/problema_rh_taxas.webp" },
+              { tag: "COLABORADORES", title: "O saldo deveria ser claro e fácil de usar.", img: "/problema_colaborador.webp" },
+              { tag: "LOJISTAS", title: "Receber não pode levar dias e taxas escondidas.", img: "/problema_lojista.webp" },
             ].map(p => (
               <div
                 key={p.tag}
-                className="relative h-80 overflow-hidden rounded-2xl bg-cover bg-center"
-                style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(0,0,0,0.85)), url('${p.img}')` }}
+                className="relative h-80 overflow-hidden rounded-2xl"
               >
+                <img
+                  src={p.img}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/85" />
                 <div className="absolute bottom-0 p-6">
                   <p className="text-xs font-extrabold text-tikin-orange mb-2">{p.tag}</p>
                   <h4 className="font-heading text-xl font-black">{p.title}</h4>
@@ -72,7 +80,7 @@ export default function Landing() {
       {[
         {
           id: "ben",
-          img: "/imagem-ilustrativa-dobra-beneficiario.png",
+          img: "/imagem-ilustrativa-dobra-beneficiario.webp",
           title: "TUDO QUE VOCÊ RECEBEU EM UMA CARTEIRA SIMPLES.",
           desc: "Você tem saldo, extrato claro, sabe exatamente onde usar e paga na hora via QR Code sem nenhuma complicação.",
           cta: "Para Beneficiários",
@@ -82,7 +90,7 @@ export default function Landing() {
         },
         {
           id: "emp",
-          img: "/imagem-ilustrativa-dobra-emitente.png",
+          img: "/imagem-ilustrativa-dobra-emitente.webp",
           title: "DISTRIBUA COM CONTROLE ABSOLUTO.",
           desc: "Acompanhe o uso e recupere a eficiência operacional. Sua empresa distribui com clareza e acompanha com segurança.",
           cta: "Para Empresas",
@@ -92,7 +100,7 @@ export default function Landing() {
         },
         {
           id: "loj",
-          img: "/imagem-ilustrativa-dobra-lojista.png",
+          img: "/imagem-ilustrativa-dobra-lojista.webp",
           title: "VENDEU. RECEBEU.",
           desc: "Venda para milhares de usuários com saldo disponível. Com a TIKIN, o lojista recebe no ato com taxa clara, sem letras miúdas.",
           cta: "Para Lojistas",
@@ -103,9 +111,16 @@ export default function Landing() {
       ].map(a => (
         <section
           key={a.id}
-          className="relative min-h-[500px] bg-cover bg-center flex items-center"
-          style={{ backgroundImage: `url('${a.img}')` }}
+          className="relative min-h-[500px] flex items-center overflow-hidden"
         >
+          <img
+            src={a.img}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
           <div className={`absolute inset-0 ${a.dark ? "bg-tikin-navy/75" : "bg-white/55"}`} />
           <div className={`container-tikin relative z-10 flex ${a.align === "right" ? "justify-end" : ""}`}>
             <div className={`max-w-xl ${a.align === "right" ? "text-right" : ""}`}>
@@ -191,7 +206,7 @@ export default function Landing() {
       {/* APP SECTION */}
       <section className="py-24 bg-white">
         <div className="container-tikin grid md:grid-cols-2 gap-16 items-center">
-          <img src="/hero.png" alt="App TIKIN" className="w-full" />
+          <img src="/hero.webp" alt="App TIKIN" loading="lazy" decoding="async" className="w-full" />
           <div>
             <h2 className="font-heading text-4xl md:text-5xl font-black text-tikin-navy mb-6">
               A EXPERIÊNCIA NA PALMA DA MÃO.

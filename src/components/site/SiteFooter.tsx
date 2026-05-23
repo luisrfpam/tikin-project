@@ -6,7 +6,7 @@ export default function SiteFooter() {
       <div className="container-tikin">
         <div className="grid gap-12 md:grid-cols-4 mb-12">
           <div className="md:col-span-1">
-            <img src="/logo-fundo-azul.png" alt="TIKIN" className="h-14 mb-6" />
+            <img src="/logo-fundo-azul.webp" alt="TIKIN" className="h-14 mb-6" />
             <p className="text-sm text-white/60 leading-relaxed">
               Redefinindo a relação entre empresas, pessoas e estabelecimentos.
             </p>

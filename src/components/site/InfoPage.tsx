@@ -10,10 +10,17 @@ interface InfoPageProps {
 export default function InfoPage({ hero, sections, cta }: InfoPageProps) {
   return (
     <SitePage>
-      <header
-        className="relative min-h-[400px] bg-cover bg-center flex items-center"
-        style={{ backgroundImage: hero.img ? `url('${hero.img}')` : undefined }}
-      >
+      <header className="relative min-h-[400px] flex items-center overflow-hidden">
+        {hero.img && (
+          <img
+            src={hero.img}
+            alt=""
+            fetchPriority="high"
+            decoding="async"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
         <div className="absolute inset-0 bg-tikin-navy/80" />
         <div className="container-tikin relative z-10 py-16">
           {hero.tag && <p className="font-heading text-tikin-orange font-extrabold mb-3 tracking-widest text-sm">{hero.tag}</p>}

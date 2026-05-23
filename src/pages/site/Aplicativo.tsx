@@ -36,10 +36,10 @@ export default function Aplicativo() {
           </div>
           <div className="grid grid-cols-2 gap-4 justify-items-center">
             <div className="border-8 border-black rounded-[28px] overflow-hidden shadow-elevated max-w-[240px]">
-              <img src="/mockup-app-1.png" alt="Tela inicial do app TIKIN" className="w-full block" />
+              <img src="/mockup-app-1.webp" alt="Tela inicial do app TIKIN" loading="lazy" decoding="async" className="w-full block" />
             </div>
             <div className="border-8 border-black rounded-[28px] overflow-hidden shadow-elevated max-w-[240px] mt-10">
-              <img src="/mockup-app-2.png" alt="Tela onde usar do app TIKIN" className="w-full block" />
+              <img src="/mockup-app-2.webp" alt="Tela onde usar do app TIKIN" loading="lazy" decoding="async" className="w-full block" />
             </div>
           </div>
         </div>

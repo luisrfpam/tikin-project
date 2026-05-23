@@ -20,7 +20,7 @@ export default function SiteHeader() {
     <nav className="sticky top-0 z-50 bg-white shadow-card">
       <div className="container-tikin flex h-[70px] items-center justify-between gap-3">
         <Link to="/" className="flex-shrink-0" onClick={() => setOpen(false)}>
-          <img src="/logo-fundo-branco.png" alt="TIKIN" className="h-6 sm:h-7" />
+          <img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-6 sm:h-7" />
         </Link>
         <div className="hidden flex-1 items-center justify-center gap-5 lg:flex">
           {links.map(l => (

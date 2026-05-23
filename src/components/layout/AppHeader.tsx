@@ -7,7 +7,7 @@ export function AppHeader({ variant = 'light' }: { variant?: 'light' | 'navy' | 
   const roleLabel = activeRole === 'emissor' ? 'Emissor' : activeRole === 'lojista' ? 'Lojista' : 'Beneficiário';
 
   const isDark = variant !== 'light';
-  const logo = isDark ? '/logo-fundo-azul.png' : '/logo-fundo-branco.png';
+  const logo = isDark ? '/logo-fundo-azul.webp' : '/logo-fundo-branco.webp';
   const bg = variant === 'navy' ? 'bg-tikin-navy' : variant === 'orange' ? 'bg-tikin-orange' : 'bg-white border-b border-tikin-navy/10';
   const textColor = isDark ? 'text-white' : 'text-tikin-navy';
 

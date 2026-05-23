@@ -35,7 +35,7 @@ export default function ForMerchants() {
               </div>
             </div>
             <div className="rounded-[20px] overflow-hidden shadow-elevated">
-              <img src="/hero-for-merchants.png" alt="Lojista" className="w-full block bg-white" />
+              <img src="/hero-for-merchants.webp" alt="Lojista" fetchPriority="high" decoding="async" className="w-full block bg-white" />
             </div>
           </div>
           <div

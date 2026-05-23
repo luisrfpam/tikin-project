@@ -14,7 +14,7 @@ export function EmissorSidebar() {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-[#0A1122] border-r border-white/5 py-7">
       <div className="px-6 pb-8">
-        <Link to="/emissor"><img src="/logo-fundo-azul.png" alt="TIKIN" className="h-7" /></Link>
+        <Link to="/emissor"><img src="/logo-fundo-azul.webp" alt="TIKIN" className="h-7" /></Link>
       </div>
       <nav className="flex-1 px-3 space-y-1">
         {items.map(({ to, label, icon: Icon, end }) => (
@@ -35,7 +35,7 @@ export function EmissorSidebar() {
         ))}
       </nav>
       <div className="mx-4 p-5 rounded-2xl border border-white/5 bg-gradient-to-br from-[#0D1B3D] to-[#162447]">
-        <img src="/logo-fundo-azul.png" alt="TIKIN" className="h-5 mb-3" />
+        <img src="/logo-fundo-azul.webp" alt="TIKIN" className="h-5 mb-3" />
         <p className="font-heading font-extrabold text-sm leading-snug">Transformamos benefícios em valor que retorna.</p>
         <p className="text-[10px] text-white/30 mt-1.5">Menos desperdício, mais impacto.</p>
       </div>

@@ -44,7 +44,7 @@ export default function RegisterPage() {
       {/* Topbar */}
       <header className="bg-white px-6 md:px-10 py-5 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-4">
-          <Link to="/"><img src="/logo-fundo-branco.png" alt="TIKIN" className="h-7" /></Link>
+          <Link to="/"><img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-7" /></Link>
           <Link to="/" className="text-tikin-navy/50 text-sm font-bold border-l border-tikin-navy/10 pl-4 hidden sm:inline">
             ← Voltar ao site
           </Link>

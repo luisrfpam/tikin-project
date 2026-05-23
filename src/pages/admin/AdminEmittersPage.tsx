@@ -1,4 +1,4 @@
-Ôªøimport { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -58,9 +58,9 @@ export default function AdminEmittersPage() {
     const { data, error } = await supabase.rpc('admin_list_issuers_secure');
 
     if (error) {
-      toast.error('N√£o foi poss√≠vel carregar emitentes.');
+      toast.error('N„o foi possÌvel carregar emitentes.');
       setLoading(false);
-      if ((error.message || '').toLowerCase().includes('n√£o autorizado')) {
+      if ((error.message || '').toLowerCase().includes('n„o autorizado')) {
         clearAdminSession();
         navigate('/tikin-admin/login', { replace: true });
       }
@@ -145,7 +145,7 @@ export default function AdminEmittersPage() {
 
     setSaving(false);
     if (error) {
-      toast.error('Falha ao salvar altera√ß√µes do emitente.');
+      toast.error('Falha ao salvar alteraÁıes do emitente.');
       return;
     }
 
@@ -164,9 +164,9 @@ export default function AdminEmittersPage() {
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col">
       <header className="bg-white px-6 md:px-10 py-5 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-4">
-          <img src="/logo-fundo-branco.png" alt="TIKIN" className="h-7" />
+          <img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-7" />
           <span className="text-tikin-navy/70 text-sm font-black border-l border-tikin-navy/10 pl-4 hidden sm:inline">
-            Gest√£o de Emitentes
+            Gest„o de Emitentes
           </span>
         </div>
         <button
@@ -184,7 +184,7 @@ export default function AdminEmittersPage() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h1 className="font-heading text-2xl font-black text-tikin-navy">Emitentes Cadastrados</h1>
-                <p className="text-sm text-tikin-navy/60">Aprove, desative e edite informa√ß√µes cadastrais.</p>
+                <p className="text-sm text-tikin-navy/60">Aprove, desative e edite informaÁıes cadastrais.</p>
               </div>
               <div className="relative w-full md:w-80">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-tikin-navy/40" />
@@ -192,7 +192,7 @@ export default function AdminEmittersPage() {
                   type="text"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Buscar por empresa, CNPJ ou respons√°vel"
+                  placeholder="Buscar por empresa, CNPJ ou respons·vel"
                   className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-tikin-navy/10 bg-[#F7F8FA] text-sm outline-none focus:border-tikin-navy"
                 />
               </div>
@@ -203,9 +203,9 @@ export default function AdminEmittersPage() {
             <section className="bg-white rounded-2xl border border-tikin-navy/10 p-5 shadow-sm">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-tikin-navy/40">Edi√ß√£o de emitente</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-tikin-navy/40">EdiÁ„o de emitente</p>
                   <h2 className="mt-1 font-heading text-xl font-black text-tikin-navy">{editing.company_name}</h2>
-                  <p className="text-sm text-tikin-navy/60">Formul√°rio inline, responsivo e sem modal.</p>
+                  <p className="text-sm text-tikin-navy/60">Formul·rio inline, responsivo e sem modal.</p>
                 </div>
                 <span className={`inline-flex w-fit px-3 py-1 rounded-full text-xs font-black ${editing.is_enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                   {editing.is_enabled ? 'ATIVO' : 'PENDENTE'}
@@ -223,7 +223,7 @@ export default function AdminEmittersPage() {
                 </label>
 
                 <label className="text-sm font-medium text-tikin-navy/70">
-                  Raz√£o social
+                  Raz„o social
                   <input
                     className="mt-1 w-full rounded-xl border border-tikin-navy/10 bg-[#F7F8FA] px-4 py-3 outline-none transition focus:border-tikin-navy"
                     value={form.razao_social}
@@ -248,7 +248,7 @@ export default function AdminEmittersPage() {
                 </label>
 
                 <label className="text-sm font-medium text-tikin-navy/70">
-                  Respons√°vel
+                  Respons·vel
                   <input
                     className="mt-1 w-full rounded-xl border border-tikin-navy/10 bg-[#F7F8FA] px-4 py-3 outline-none transition focus:border-tikin-navy"
                     value={form.responsible_name}
@@ -289,7 +289,7 @@ export default function AdminEmittersPage() {
                   }}
                   className="rounded-xl bg-tikin-navy px-5 py-3 hover:bg-tikin-navy/90"
                 >
-                  {saving ? 'Salvando...' : 'Salvar altera√ß√µes'}
+                  {saving ? 'Salvando...' : 'Salvar alteraÁıes'}
                 </Button>
               </div>
             </section>
@@ -314,8 +314,8 @@ export default function AdminEmittersPage() {
                   </div>
 
                   <dl className="mt-4 space-y-1 text-sm text-tikin-navy/70">
-                    <div><strong>Raz√£o social:</strong> {issuer.razao_social || '-'}</div>
-                    <div><strong>Respons√°vel:</strong> {issuer.responsible_name || '-'} {issuer.responsible_role ? `(${issuer.responsible_role})` : ''}</div>
+                    <div><strong>Raz„o social:</strong> {issuer.razao_social || '-'}</div>
+                    <div><strong>Respons·vel:</strong> {issuer.responsible_name || '-'} {issuer.responsible_role ? `(${issuer.responsible_role})` : ''}</div>
                     <div><strong>E-mail corporativo:</strong> {issuer.corporate_email || '-'}</div>
                   </dl>
 

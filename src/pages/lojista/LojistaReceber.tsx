@@ -132,7 +132,7 @@ export default function LojistaReceber() {
       <nav className="bg-tikin-orange px-6 sticky top-0 z-40">
         <div className="flex items-center justify-between h-16 max-w-md mx-auto">
           <button onClick={() => navigate('/lojista')} className="text-white"><ArrowLeft size={22} /></button>
-          <img src="/logo-fundo-branco.png" alt="TIKIN" className="h-6" />
+          <img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-6" />
           <button onClick={signOut} className="text-white/70 text-xs font-extrabold">SAIR</button>
         </div>
       </nav>

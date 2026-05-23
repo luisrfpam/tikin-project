@@ -35,7 +35,7 @@ export default function ForCompanies() {
               </div>
             </div>
             <div className="rounded-[20px] overflow-hidden shadow-elevated">
-              <img src="/hero-for-companies.png" alt="Dashboard da Empresa" className="w-full block bg-white" />
+              <img src="/hero-for-companies.webp" alt="Dashboard da Empresa" fetchPriority="high" decoding="async" className="w-full block bg-white" />
             </div>
           </div>
           <div

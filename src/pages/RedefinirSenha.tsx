@@ -117,7 +117,7 @@ export default function RedefinirSenha() {
     return (
       <div className="min-h-screen bg-[#F7F8FA] flex flex-col">
         <header className="bg-white px-6 md:px-10 py-5 flex justify-between items-center shadow-sm">
-          <Link to="/"><img src="/logo-fundo-branco.png" alt="TIKIN" className="h-7" /></Link>
+          <Link to="/"><img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-7" /></Link>
         </header>
         <div className="flex-1 flex items-center justify-center px-4 py-10">
           <div className="w-full max-w-md bg-white rounded-3xl shadow-elevated p-10 border-t-4 border-t-tikin-navy text-center">
@@ -138,7 +138,7 @@ export default function RedefinirSenha() {
   return (
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col">
       <header className="bg-white px-6 md:px-10 py-5 flex justify-between items-center shadow-sm">
-        <Link to="/"><img src="/logo-fundo-branco.png" alt="TIKIN" className="h-7" /></Link>
+        <Link to="/"><img src="/logo-fundo-branco.webp" alt="TIKIN" className="h-7" /></Link>
       </header>
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-elevated p-10 border-t-4 border-t-tikin-navy">

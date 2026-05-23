@@ -85,7 +85,7 @@ export default function BeneficiarioHome() {
       {/* Navy Hero Header */}
       <div className="relative bg-tikin-navy pb-20 pt-5 px-6">
         <div className="flex items-center justify-between">
-          <img src="/logo-fundo-azul.png" alt="TIKIN" className="h-6" />
+          <img src="/logo-fundo-azul.webp" alt="TIKIN" className="h-6" />
           <div className="flex items-center gap-3">
             <Bell className="text-white" size={20} />
             <button onClick={signOut} className="text-white/60 text-xs font-extrabold">SAIR</button>

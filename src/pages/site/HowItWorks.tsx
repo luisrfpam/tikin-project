@@ -40,7 +40,7 @@ export default function HowItWorks() {
           </div>
           <div className="rounded-[20px] overflow-hidden shadow-elevated">
             <img
-              src="/hero-how-it-works.png"
+              src="/hero-how-it-works.webp"
               alt="Fluxo dos 3 atores TIKIN"
               className="w-full block"
             />

@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.etherfuse-create-offramp]
 verify_jwt = false
 
+[functions.offramp-retry-failed]
+verify_jwt = false
+
 [functions.password-recovery-random]
 verify_jwt = false
 

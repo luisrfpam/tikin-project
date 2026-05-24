@@ -126,6 +126,12 @@ export default function EmissorBlockchain() {
     if (!iss) { setRows([]); setIssuerId(null); setLoading(false); return; }
     setIssuerId(iss.id);
 
+    // Best-effort self-healing for failed off-ramp orders linked to this issuer.
+    // Keeps cycle view converging automatically without manual ops.
+    await supabase.functions.invoke('offramp-retry-failed', {
+      body: { max_orders: 8, lookback_hours: 72 },
+    }).catch(() => undefined);
+
     // Ensure this issuer has its own Stellar wallet (creates + funds via friendbot on first call)
     let walletKey: string | null = null;
     const { data: w0 } = await supabase.from('issuer_stellar_wallets').select('public_key').eq('issuer_id', iss.id).maybeSingle();

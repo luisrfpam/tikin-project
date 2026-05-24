@@ -5,6 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const ACCOUNT_CREATION_NOT_ALLOWED = "Não é possível criar uma conta";
+
 function genTempPassword() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let s = "";
@@ -39,27 +41,45 @@ Deno.serve(async (req) => {
     const { data: issuer } = await admin.from("issuers").select("id").eq("user_id", user.id).maybeSingle();
     if (!issuer) return new Response(JSON.stringify({ error: "Emissor não encontrado" }), { status: 403, headers: corsHeaders });
 
-    // Check existing profile by cpf
-    const { data: existingByCpf } = await admin.from("profiles").select("id,email").eq("cpf", cpf).maybeSingle();
-    let beneficiaryId: string;
-    let tempPassword: string | null = null;
+    const { data: conflictByCpfOrCnpj } = await admin.rpc("lookup_email_by_identifier", { _identifier: cpf });
+    const { data: conflictByEmail } = await admin.rpc("lookup_email_by_identifier", { _identifier: email });
+    if (conflictByCpfOrCnpj || conflictByEmail) {
+      return new Response(JSON.stringify({ error: ACCOUNT_CREATION_NOT_ALLOWED }), { status: 409, headers: corsHeaders });
+    }
 
-    if (existingByCpf) {
-      beneficiaryId = existingByCpf.id;
-    } else {
-      tempPassword = genTempPassword();
-      const { data: created, error: cErr } = await admin.auth.admin.createUser({
-        email,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: { name, cpf, must_change_password: true },
-      });
-      if (cErr || !created.user) {
-        return new Response(JSON.stringify({ error: cErr?.message || "Falha ao criar usuário" }), { status: 400, headers: corsHeaders });
+    const tempPassword = genTempPassword();
+    const { data: created, error: cErr } = await admin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { name, cpf, must_change_password: true },
+    });
+    if (cErr || !created.user) {
+      const msg = (cErr?.message || "").toLowerCase();
+      if (
+        msg.includes("already registered") ||
+        msg.includes("duplicate key") ||
+        msg.includes("unique constraint") ||
+        msg.includes("database error saving new user")
+      ) {
+        return new Response(JSON.stringify({ error: ACCOUNT_CREATION_NOT_ALLOWED }), { status: 409, headers: corsHeaders });
       }
-      beneficiaryId = created.user.id;
-      await admin.from("profiles").update({ name, cpf }).eq("id", beneficiaryId);
-      await admin.from("user_roles").insert([{ user_id: beneficiaryId, role: "beneficiario" }]);
+      return new Response(JSON.stringify({ error: cErr?.message || "Falha ao criar usuário" }), { status: 400, headers: corsHeaders });
+    }
+
+    const beneficiaryId = created.user.id;
+    const { error: profileErr } = await admin.from("profiles").update({ name, cpf }).eq("id", beneficiaryId);
+    if (profileErr) {
+      const msg = (profileErr.message || "").toLowerCase();
+      if (msg.includes("duplicate key") || msg.includes("unique constraint")) {
+        return new Response(JSON.stringify({ error: ACCOUNT_CREATION_NOT_ALLOWED }), { status: 409, headers: corsHeaders });
+      }
+      return new Response(JSON.stringify({ error: profileErr.message }), { status: 400, headers: corsHeaders });
+    }
+
+    const { error: roleErr } = await admin.from("user_roles").insert([{ user_id: beneficiaryId, role: "beneficiario" }]);
+    if (roleErr) {
+      return new Response(JSON.stringify({ error: roleErr.message }), { status: 400, headers: corsHeaders });
     }
 
     // Link
@@ -73,7 +93,7 @@ Deno.serve(async (req) => {
       beneficiary_id: beneficiaryId,
       issuer_beneficiary_id: linkRow?.id ?? null,
       temp_password: tempPassword,
-      created: !existingByCpf,
+      created: true,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: corsHeaders });

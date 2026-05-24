@@ -36,6 +36,8 @@ type SignupMetadata = {
   contact_email?: string;
 };
 
+const GENERIC_ACCOUNT_CREATION_ERROR = 'Não é possível criar uma conta.';
+
 export default function RegisterPage() {
   const [profile, setProfile] = useState<Profile>(null);
 
@@ -169,18 +171,20 @@ function getSignupErrorMessage(errorMessage?: string) {
   const msg = (errorMessage || '').toLowerCase();
   if (!msg) return 'Não foi possível concluir o cadastro. Tente novamente.';
 
-  if (msg.includes('user already registered') || msg.includes('already registered')) {
-    return 'E-mail já cadastrado. Faça login ou recupere sua senha.';
+  if (
+    msg.includes('user already registered') ||
+    msg.includes('already registered') ||
+    msg.includes('database error saving new user') ||
+    msg.includes('duplicate key') ||
+    msg.includes('unique constraint')
+  ) {
+    return GENERIC_ACCOUNT_CREATION_ERROR;
   }
 
-  if (msg.includes('database error saving new user')) {
-    return 'CPF/CNPJ já cadastrado. Faça login ou recupere sua conta.';
-  }
-
-  return errorMessage || 'Não foi possível concluir o cadastro. Tente novamente.';
+  return 'Não foi possível concluir o cadastro. Tente novamente.';
 }
 
-async function ensureIdentifierAvailable(identifier: string, label: 'CPF' | 'CNPJ') {
+async function ensureIdentifierAvailable(identifier: string) {
   const digits = identifier.replace(/\D/g, '');
   if (!digits) return;
 
@@ -188,7 +192,19 @@ async function ensureIdentifierAvailable(identifier: string, label: 'CPF' | 'CNP
   if (error) return;
 
   if (data) {
-    throw new Error(`${label} já cadastrado. Use outro ${label} ou faça login/recupere sua conta.`);
+    throw new Error(GENERIC_ACCOUNT_CREATION_ERROR);
+  }
+}
+
+async function ensureEmailAvailable(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes('@')) return;
+
+  const { data, error } = await supabase.rpc('lookup_email_by_identifier', { _identifier: normalizedEmail });
+  if (error) return;
+
+  if (data) {
+    throw new Error(GENERIC_ACCOUNT_CREATION_ERROR);
   }
 }
 
@@ -223,10 +239,11 @@ function EmpresaForm({ onBack }: { onBack: () => void }) {
 
     setLoading(true);
     try {
-      await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
+      await ensureIdentifierAvailable(form.cnpj);
+      await ensureEmailAvailable(corporateEmail);
     } catch (e: any) {
       setLoading(false);
-      return toast.error(e?.message || 'CNPJ já cadastrado.');
+      return toast.error(e?.message || GENERIC_ACCOUNT_CREATION_ERROR);
     }
     const { data, error } = await signupCommon(corporateEmail, form.password, {
       name: form.responsible_name,
@@ -394,10 +411,11 @@ function BeneficiarioForm({ onBack }: { onBack: () => void }) {
 
     setLoading(true);
     try {
-      await ensureIdentifierAvailable(form.cpf, 'CPF');
+      await ensureIdentifierAvailable(form.cpf);
+      await ensureEmailAvailable(personalEmail);
     } catch (e: any) {
       setLoading(false);
-      return toast.error(e?.message || 'CPF já cadastrado.');
+      return toast.error(e?.message || GENERIC_ACCOUNT_CREATION_ERROR);
     }
     const { data, error } = await signupCommon(personalEmail, form.password, {
       name: form.name,
@@ -607,10 +625,11 @@ function LojistaForm({ onBack }: { onBack: () => void }) {
 
     setLoading(true);
     try {
-      await ensureIdentifierAvailable(form.cnpj, 'CNPJ');
+      await ensureIdentifierAvailable(form.cnpj);
+      await ensureEmailAvailable(normalizedEmail);
     } catch (e: any) {
       setLoading(false);
-      return toast.error(e?.message || 'CNPJ já cadastrado.');
+      return toast.error(e?.message || GENERIC_ACCOUNT_CREATION_ERROR);
     }
     const { data, error } = await signupCommon(normalizedEmail, form.password, {
       name: form.trade_name,

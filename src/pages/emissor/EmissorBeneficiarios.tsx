@@ -254,7 +254,12 @@ function NovoBeneficiarioModal({ issuerId, onClose, onDone }: { issuerId: string
     if (!isValidEmail(email)) return toast.error('E-mail inválido');
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('create-beneficiary', { body: { name: name.trim(), cpf: onlyDigits(cpf), email: email.trim().toLowerCase() } });
-    if (error || (data as any)?.error) { setLoading(false); toast.error((data as any)?.error || error?.message || 'Erro'); return; }
+    if (error || (data as any)?.error) {
+      console.error('create-beneficiary failed', { error, data });
+      setLoading(false);
+      toast.error('Não é possível criar uma conta.');
+      return;
+    }
     // Register beneficiary lifecycle on Stellar using issuer_beneficiaries row id.
     const issuerBeneficiaryId = (data as any).issuer_beneficiary_id as string | null;
     const wasCreated = Boolean((data as any).created);

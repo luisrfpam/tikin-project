@@ -348,9 +348,8 @@ export default function EmissorBlockchain() {
       const failedOfframpRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_failed');
       const expectedAmount = Number(payRow?.amount ?? burnRow?.amount ?? pixRow?.amount ?? chargeRows[0]?.amount ?? 0);
       const exactChargeRow = chargeRows.find((r) => sameAmount(r.amount, expectedAmount));
-      const fallbackChargeRow = chargeRows[0];
       const startedAt = sortedRows[0]?.created_at;
-      const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || exactChargeRow?.counterparty_label || fallbackChargeRow?.counterparty_label || null;
+      const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || exactChargeRow?.counterparty_label || null;
 
       const chargeAmountMismatch = !!chargeRows.length && !exactChargeRow;
 
@@ -358,7 +357,7 @@ export default function EmissorBlockchain() {
         transactionId,
         rows: sortedRows,
         expectedAmount,
-        chargeRow: exactChargeRow || fallbackChargeRow,
+        chargeRow: exactChargeRow,
         payRow,
         burnRow: burnRow || failedOfframpRow,
         pixRow: pixRow || failedOfframpRow,
@@ -615,7 +614,14 @@ export default function EmissorBlockchain() {
                   <td className="px-5 py-3">{cycleStageBadge(c.chargeRow, c.expectedAmount)}</td>
                   <td className="px-5 py-3">{cycleStageBadge(c.payRow, c.expectedAmount)}</td>
                   <td className="px-5 py-3">{cycleStageBadge(c.burnRow, c.expectedAmount)}</td>
-                  <td className="px-5 py-3">{cycleStageBadge(c.pixRow, c.expectedAmount)}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      {cycleStageBadge(c.pixRow, c.expectedAmount)}
+                      {c.chargeAmountMismatch && (
+                        <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">COBRANÇA DIVERGENTE</span>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

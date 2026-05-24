@@ -320,6 +320,11 @@ export default function EmissorBlockchain() {
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const cycleGroups = (() => {
+    const sameAmount = (a?: number | null, b?: number | null) => {
+      if (a == null || b == null) return false;
+      return Math.abs(Number(a) - Number(b)) < 0.01;
+    };
+
     const map = new Map<string, Row[]>();
     for (const row of filtered) {
       const key = row.cycle_transaction_id;
@@ -332,7 +337,7 @@ export default function EmissorBlockchain() {
       const sortedRows = [...groupRows].sort((a, b) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       );
-      const chargeRow = sortedRows.find((r) =>
+      const chargeRows = sortedRows.filter((r) =>
         r.entity_type === 'charge' && (r.operation === 'charge' || r.operation === 'create_charge' || r.operation === 'charge.create'),
       );
       const payRow = sortedRows.find((r) =>
@@ -341,23 +346,34 @@ export default function EmissorBlockchain() {
       const burnRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_burn');
       const pixRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_pix_paid');
       const failedOfframpRow = sortedRows.find((r) => r.entity_type === 'offramp_order' && r.operation === 'offramp_failed');
-      const amount = Number(payRow?.amount ?? chargeRow?.amount ?? burnRow?.amount ?? pixRow?.amount ?? 0);
+      const expectedAmount = Number(payRow?.amount ?? burnRow?.amount ?? pixRow?.amount ?? chargeRows[0]?.amount ?? 0);
+      const exactChargeRow = chargeRows.find((r) => sameAmount(r.amount, expectedAmount));
+      const fallbackChargeRow = chargeRows[0];
       const startedAt = sortedRows[0]?.created_at;
-      const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || chargeRow?.counterparty_label || null;
+      const counterparty = payRow?.counterparty_label || burnRow?.counterparty_label || pixRow?.counterparty_label || exactChargeRow?.counterparty_label || fallbackChargeRow?.counterparty_label || null;
+
+      const chargeAmountMismatch = !!chargeRows.length && !exactChargeRow;
 
       return {
         transactionId,
         rows: sortedRows,
-        chargeRow,
+        expectedAmount,
+        chargeRow: exactChargeRow || fallbackChargeRow,
         payRow,
         burnRow: burnRow || failedOfframpRow,
         pixRow: pixRow || failedOfframpRow,
-        amount,
+        chargeAmountMismatch,
         startedAt,
         counterparty,
       };
     }).sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   })();
+
+  const mismatchedChargeIds = new Set(
+    cycleGroups
+      .filter((c) => c.chargeAmountMismatch && c.chargeRow?.internal_id)
+      .map((c) => c.chargeRow!.internal_id),
+  );
 
   const businessStatusBadge = (status?: string | null) => {
     if (status === 'confirmed' || status === 'paid' || status === 'active') {
@@ -375,8 +391,10 @@ export default function EmissorBlockchain() {
     return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 text-[10px] font-bold">SEM VÍNCULO</span>;
   };
 
-  const cycleStageBadge = (row?: Row) => {
+  const cycleStageBadge = (row: Row | undefined, expectedAmount: number) => {
     if (!row) return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/40 text-[10px] font-bold">NÃO GERADO</span>;
+    const amountMatches = row.amount != null && Math.abs(Number(row.amount) - Number(expectedAmount)) < 0.01;
+    if (!amountMatches) return <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">VALOR DIFERENTE</span>;
     if (row.business_status === 'reversed') return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/70 text-[10px] font-bold">ESTORNADO</span>;
     if (row.status === 'success') return <span className="px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 text-[10px] font-bold">OK</span>;
     if (row.status === 'pending') return <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>;
@@ -593,11 +611,11 @@ export default function EmissorBlockchain() {
                   <td className="px-5 py-3 text-xs text-white/60 whitespace-nowrap">{c.startedAt ? format(parseISO(c.startedAt), 'dd/MM/yy HH:mm:ss') : '—'}</td>
                   <td className="px-5 py-3 text-[10px] font-mono text-white/50">{c.transactionId.slice(0, 8)}…</td>
                   <td className="px-5 py-3 text-[10px] text-white/70">{c.counterparty || '—'}</td>
-                  <td className="px-5 py-3 text-right text-xs font-heading font-black">R$ {brl(c.amount)}</td>
-                  <td className="px-5 py-3">{cycleStageBadge(c.chargeRow)}</td>
-                  <td className="px-5 py-3">{cycleStageBadge(c.payRow)}</td>
-                  <td className="px-5 py-3">{cycleStageBadge(c.burnRow)}</td>
-                  <td className="px-5 py-3">{cycleStageBadge(c.pixRow)}</td>
+                  <td className="px-5 py-3 text-right text-xs font-heading font-black">R$ {brl(c.expectedAmount)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.chargeRow, c.expectedAmount)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.payRow, c.expectedAmount)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.burnRow, c.expectedAmount)}</td>
+                  <td className="px-5 py-3">{cycleStageBadge(c.pixRow, c.expectedAmount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -654,7 +672,11 @@ export default function EmissorBlockchain() {
                     {r.status === 'pending' && <span className="px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 text-[10px] font-bold">PENDENTE</span>}
                     {r.status === 'superseded' && <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/60 text-[10px] font-bold">SUPERSEDED</span>}
                   </td>
-                  <td className="px-5 py-3">{businessStatusBadge(r.business_status)}</td>
+                  <td className="px-5 py-3">
+                    {r.entity_type === 'charge' && mismatchedChargeIds.has(r.internal_id)
+                      ? <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 text-[10px] font-bold">INCONSISTENTE</span>
+                      : businessStatusBadge(r.business_status)}
+                  </td>
                 </tr>
               ))}
             </tbody>
